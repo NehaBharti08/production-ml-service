@@ -1,0 +1,130 @@
+# =============================================================================
+# NEVER COMMIT — health-adjacent project. Verified by hand before first push.
+# See docs/DECISIONS/ and README "Data handling" for the reasoning.
+# =============================================================================
+
+# --- Secrets -----------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*_credentials.json
+.secrets.baseline.local
+
+# --- Patient-level data ------------------------------------------------------
+# The UCI dataset is public, but we still never commit row-level records:
+# it keeps the repo honest, small, and reviewable. data/README.md explains
+# how to fetch it; data/checksums.txt makes that fetch reproducible.
+data/raw/
+data/interim/
+data/processed/
+data/reference/
+data/monitoring/
+*.csv
+*.parquet
+*.feather
+*.arrow
+*.xlsx
+!data/checksums.txt
+
+# --- Model binaries ----------------------------------------------------------
+# Models live in the MLflow registry (local) and an HF Model repo (remote),
+# never in git. Binaries in git make clones huge and diffs meaningless.
+models/
+*.pkl
+*.pickle
+*.joblib
+*.onnx
+*.bin
+*.pt
+*.h5
+
+# --- MLflow ------------------------------------------------------------------
+mlruns/
+mlartifacts/
+mlflow.db
+*.mlflow
+
+# --- Observability volumes ---------------------------------------------------
+grafana-data/
+prometheus-data/
+alertmanager-data/
+postgres-data/
+
+# --- Monitoring output -------------------------------------------------------
+reports/*.html
+reports/*.json
+!reports/.gitkeep
+
+# --- Python ------------------------------------------------------------------
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib60/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# --- Tooling caches ----------------------------------------------------------
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+.tox/
+.nox/
+
+# --- Notebooks ---------------------------------------------------------------
+# nbstripout also runs in pre-commit; this is belt and braces, because a
+# notebook output cell can contain patient rows.
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# --- Load testing ------------------------------------------------------------
+loadtest/results/
+*.k6-summary.json
+
+# --- Kubernetes / local clusters ---------------------------------------------
+kubeconfig
+*.kubeconfig
+
+# --- IDE / OS ----------------------------------------------------------------
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Misc --------------------------------------------------------------------
+*.log
+logs/
+!logs/.gitkeep
+.claude/
+scratch/
+tmp/

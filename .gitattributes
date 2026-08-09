@@ -1,0 +1,60 @@
+# =============================================================================
+# Line endings.
+#
+# This project is developed on Windows and runs on Linux — in containers, in
+# `kind`, and in GitHub Actions. Git's default autocrlf on Windows would commit
+# CRLF into files that Linux then chokes on: a shell script with `\r` line
+# endings fails as "bad interpreter: /bin/sh^M", and a Dockerfile RUN
+# continuation silently breaks.
+#
+# So: normalise everything to LF in the repository, and check it out as LF.
+# The only exceptions are Windows-native scripts, which need CRLF.
+# =============================================================================
+
+# Default: treat as text, store and check out LF.
+* text=auto eol=lf
+
+# --- Explicit LF (would break on Linux otherwise) ----------------------------
+*.py        text eol=lf
+*.sh        text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.toml      text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+*.txt       text eol=lf
+*.js        text eol=lf
+*.html      text eol=lf
+*.css       text eol=lf
+*.ipynb     text eol=lf
+Makefile    text eol=lf
+Dockerfile* text eol=lf
+.env.example text eol=lf
+.gitignore  text eol=lf
+.dockerignore text eol=lf
+
+# --- Windows-native: must stay CRLF ------------------------------------------
+*.ps1       text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# --- Binary: never touch -----------------------------------------------------
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.zip       binary
+*.gz        binary
+*.pkl       binary
+*.joblib    binary
+*.onnx      binary
+*.parquet   binary
+
+# --- Diff behaviour ----------------------------------------------------------
+# Generated; collapse it in PR diffs so reviewers see the real changes.
+uv.lock     linguist-generated=true -diff
+
+# Notebook outputs are stripped by nbstripout, but keep diffs readable anyway.
+*.ipynb     linguist-documentation=true
