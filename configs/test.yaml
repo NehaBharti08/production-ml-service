@@ -1,0 +1,24 @@
+# =============================================================================
+# Test environment — used by pytest via MLSERVICE_ENV=test.
+#
+# Everything points at temporary or in-memory locations so a test run can never
+# touch real data, a real registry, or the developer's MLflow store.
+# =============================================================================
+
+debug: true
+
+logging:
+  level: WARNING     # keep test output readable; individual tests raise it
+  format: console
+
+mlflow:
+  tracking_uri: ""   # tests use a tmp_path file store injected by fixtures
+  experiment_name: test-readmission-risk
+
+api:
+  port: 8001         # never collide with a dev server on 8000
+  workers: 1
+  max_batch_size: 10 # small, so batch-limit tests are cheap
+
+data:
+  random_seed: 0

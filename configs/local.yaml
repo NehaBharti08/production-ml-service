@@ -1,0 +1,22 @@
+# =============================================================================
+# Local development — docker-compose stack on the dev machine.
+# =============================================================================
+
+# Human-readable logs when a person is watching; JSON everywhere else.
+# Override with MLSERVICE_LOGGING__FORMAT=json to see exactly what ships.
+logging:
+  level: INFO
+  format: console
+
+mlflow:
+  # Inside compose the API reaches MLflow by service name. When running the API
+  # directly on the host (uv run mlservice serve), export
+  # MLSERVICE_MLFLOW__TRACKING_URI=http://localhost:5000 instead.
+  tracking_uri: http://mlflow:5000
+
+api:
+  port: 8000
+  workers: 1
+  cors_origins:
+    - http://localhost:8000
+    - http://localhost:3000

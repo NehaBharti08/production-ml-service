@@ -1,0 +1,87 @@
+# =============================================================================
+# Base configuration — shared by every environment.
+#
+# Precedence: defaults in config.py < this file < configs/{env}.yaml
+#             < environment variables (MLSERVICE_*) < .env
+#
+# Operational numbers (SLOs, drift thresholds, promotion gates) are NOT here.
+# They live in thresholds.yaml because Phase 6 regenerates them from data and
+# that regeneration should be a small, reviewable diff.
+# =============================================================================
+
+debug: false
+
+paths:
+  data_raw: data/raw
+  data_interim: data/interim
+  data_processed: data/processed
+  data_reference: data/reference        # frozen training window for drift comparison
+  data_monitoring: data/monitoring      # prediction log + matured outcomes
+  models: models
+  reports: reports
+  logs: logs
+
+logging:
+  level: INFO
+  format: json
+  request_id_header: X-Request-ID
+  # Direct identifiers. Neither is a model feature; both would be a liability
+  # in an aggregated log store, so they never reach one.
+  redact_fields:
+    - patient_nbr
+    - encounter_id
+
+data:
+  dataset_name: diabetes_130_us_hospitals
+  source_url: https://archive.ics.uci.edu/static/public/296/diabetes+130+us+hospitals+for+years+1999+2008.zip
+  target_column: readmitted
+  positive_label: "<30"
+
+  # NOT a timestamp. This dataset has no date column at all; encounter_id is a
+  # sequence assigned at admission and is therefore a PROXY for time. Phase 1
+  # tests whether it actually carries time signal before any split trusts it.
+  # If that test fails, the claim downgrades from "temporal" to "ordered" and
+  # the README says so. See docs/DECISIONS/0004-temporal-split-proxy.md.
+  time_proxy_column: encounter_id
+  patient_id_column: patient_nbr
+
+  train_fraction: 0.60
+  val_fraction: 0.20
+  test_fraction: 0.20
+
+  # 101,766 encounters span ~71,518 patients. Without this, the same patient
+  # lands on both sides of the split and every held-out number is inflated.
+  # Matches the Strack et al. (2014) protocol.
+  first_encounter_only: true
+
+  # Expired / hospice discharge codes. A patient who died cannot be readmitted,
+  # so the label is deterministic and the model would learn "died -> not
+  # readmitted". Verified against IDS_mapping.csv in Phase 1 before use.
+  expired_discharge_ids: [11, 13, 14, 19, 20, 21]
+
+  random_seed: 42
+
+model:
+  name: readmission-risk
+  serving_alias: champion          # flipping this alias is the rollback lever
+  challenger_alias: challenger
+  local_fallback: null
+  # PLACEHOLDER. Phase 2 selects this on the validation split for a stated
+  # recall target. 0.5 is a default, never a decision — an 11% base rate makes
+  # the naive threshold close to useless.
+  decision_threshold: 0.5
+
+mlflow:
+  tracking_uri: http://localhost:5000
+  experiment_name: readmission-risk
+  registry_uri: null               # defaults to tracking_uri
+
+api:
+  title: Hospital Readmission Risk API
+  version: v1
+  host: 0.0.0.0
+  port: 8000
+  workers: 1
+  graceful_shutdown_seconds: 20    # must stay below k8s terminationGracePeriodSeconds
+  max_batch_size: 500
+  cors_origins: []

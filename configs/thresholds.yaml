@@ -1,0 +1,321 @@
+# =============================================================================
+# OPERATIONAL THRESHOLDS — single source of truth for SLOs, drift alerting and
+# promotion gates. Read by the API, the monitoring job, the alert-rule
+# generator and the retraining gates.
+#
+# ---------------------------------------------------------------------------
+# EVERY VALUE CARRIES A PROVENANCE TAG. Arbitrary thresholds are the clearest
+# sign that monitoring was copied rather than reasoned about, so a number
+# without a justification is a bug in this file.
+#
+#   MEASURED     derived from an observation in this repo; `source` names it
+#   DERIVED      computed from a MEASURED value by a stated rule
+#   STANDARD     an external, citable convention; `source` names it
+#   PLACEHOLDER  not yet real. MUST NOT be used for alerting. The phase that
+#                replaces it is named. CI fails if any PLACEHOLDER survives
+#                into the v1.0.0 tag.
+# ---------------------------------------------------------------------------
+# =============================================================================
+
+schema_version: 1
+last_updated: "2026-08-09"
+status: phase-0-scaffold        # -> phase-4-measured -> phase-6-calibrated
+
+# =============================================================================
+# 1. SERVICE LEVEL OBJECTIVES
+# =============================================================================
+slo:
+  availability:
+    target: 0.995
+    provenance: STANDARD
+    # 99.5% over 30 days = 3.6h error budget. Chosen over 99.9% (43m) because
+    # this is a single-replica free-tier demo; promising three nines on
+    # infrastructure that legitimately restarts would be a fake SLO, and a
+    # fake SLO is worse than none.
+    window_days: 30
+    error_budget_minutes: 216
+
+  # Multi-window multi-burn-rate alerting. These multipliers are NOT invented:
+  # they are the published Google SRE Workbook values, chosen so that a page
+  # means "you will exhaust the budget before the window ends".
+  burn_rate:
+    provenance: STANDARD
+    source: "Google SRE Workbook, Ch.5 'Alerting on SLOs' — multiwindow, multi-burn-rate"
+    page:
+      long_window: 1h
+      short_window: 5m
+      factor: 14.4      # burns 2% of a 30d budget in 1h
+    ticket:
+      long_window: 6h
+      short_window: 30m
+      factor: 6.0       # burns 5% of a 30d budget in 6h
+
+  latency:
+    provenance: PLACEHOLDER
+    replaced_in_phase: 4
+    # Phase 4 measures p50/p95/p99 across the k6 ramp, finds the knee, and
+    # rewrites this block. The RULE is fixed now so the numbers cannot be
+    # reverse-engineered to whatever the service happens to do:
+    #
+    #     slo_p99_ms   = ceil(measured_p99_at_target_rps * 2)
+    #     page_ms      = slo_p99_ms, breached for 5 consecutive minutes
+    #     ticket_ms    = ceil(measured_p99_at_target_rps * 1.5), sustained 30m
+    #
+    # The 2x factor leaves headroom for cold caches and scrape jitter; the 5m
+    # window outlives a GC pause. A one-scrape spike is not an incident.
+    derivation_rule: "slo = 2 x measured_p99 @ target_rps; page = slo for 5m; ticket = 1.5 x measured_p99 for 30m"
+    target_rps: 50
+    slo_p99_ms: null
+    slo_p95_ms: null
+    page_p99_ms: null
+    ticket_p99_ms: null
+
+  error_rate:
+    provenance: DERIVED
+    # Follows directly from the availability target: sustained 5xx above the
+    # error budget's burn rate is the same event as an availability breach.
+    # 4xx is excluded — a client sending bad input is not the service failing,
+    # and counting it here would make the SLO unactionable.
+    page_5xx_ratio: 0.01
+    page_window: 5m
+    ticket_5xx_ratio: 0.005
+    ticket_window: 30m
+    exclude_4xx: true
+
+# =============================================================================
+# 2. DRIFT DETECTION
+# =============================================================================
+drift:
+  method:
+    provenance: STANDARD
+    primary: psi                    # Population Stability Index
+    secondary: jensen_shannon
+    # Deliberately NOT Kolmogorov-Smirnov p-values. With ~20k rows per window,
+    # K-S returns p < 0.05 for shifts far too small to act on: statistical
+    # significance scales with n, practical significance does not. Alerting on
+    # p-values at this sample size guarantees a permanently red dashboard,
+    # which trains the operator to ignore it. Effect sizes do not have this
+    # failure mode.
+    rationale: "effect size over significance test; n-invariant at monitoring window sizes"
+    numeric_bins: 10
+    binning: quantile               # equal-frequency, from the reference window
+
+  # -------------------------------------------------------------------------
+  # Per-feature thresholds, calibrated against an EMPIRICAL NULL.
+  #
+  # The credit-risk convention (PSI <0.1 stable / 0.1-0.2 moderate / >0.2
+  # significant) is defensible but generic — it says nothing about how much
+  # THIS dataset's features naturally churn. So Phase 6 measures that:
+  #
+  #   1. split the training period into 20 consecutive equal windows
+  #      (periods we already accepted as stable, by training on them)
+  #   2. compute PSI per feature between adjacent windows
+  #   3. that distribution IS this dataset's normal churn
+  #   4. threshold[f] = clamp(percentile_99(null_psi[f]), floor, ceiling)
+  #
+  # Every threshold then answers "why this number?" with: "because this
+  # feature moved that much between stable training windows only 1% of the
+  # time." The clamp stops a noisy feature setting an absurdly permissive bar
+  # and a frozen feature setting a hair-trigger.
+  # -------------------------------------------------------------------------
+  per_feature:
+    provenance: PLACEHOLDER
+    replaced_in_phase: 6
+    generated_by: "mlservice.monitoring.null_calibration"
+    calibration:
+      n_null_windows: 20
+      percentile: 99
+      floor: 0.10                   # STANDARD: credit-risk "no meaningful shift"
+      ceiling: 0.25                 # STANDARD: above the "significant" convention
+    thresholds: {}                  # feature_name -> psi threshold, written by the generator
+
+  # -------------------------------------------------------------------------
+  # Alert conditions
+  # -------------------------------------------------------------------------
+  alert:
+    data_drift:
+      provenance: DERIVED
+      min_features_breaching: 3
+      # 3 rather than 1: with ~45 features at a 99th-percentile null threshold,
+      # ~0.45 features are expected to breach per window by chance alone.
+      # Requiring 3 puts the false-alarm rate per window into the low percent
+      # under a Poisson(0.45) tail, without needing a real shift to be large.
+      consecutive_windows: 2
+      # Two-window confirmation is what stops flapping. A single-window blip is
+      # noise; paging on noise is how a pager gets ignored.
+      window_size_rows: 5000
+      min_window_rows: 1000         # below this, PSI is too unstable to trust
+
+    prediction_drift:
+      provenance: DERIVED
+      # Two independent signals, because they fail differently:
+      #  - mean score moving = the model is seeing a different population
+      #  - alert rate moving = downstream human workload is changing, which is
+      #    what an operator actually feels first
+      mean_proba_ci_level: 0.99     # bootstrap CI from the training distribution
+      alert_rate_relative_change: 0.25
+      consecutive_windows: 2
+
+    label_drift:
+      provenance: DERIVED
+      # Expressed in bootstrap standard errors, NOT raw PR-AUC points: a 0.02
+      # drop means something entirely different at n=500 than at n=5000, and a
+      # fixed point threshold would page constantly on small windows and never
+      # on large ones.
+      pr_auc_drop_in_standard_errors: 2.0
+      min_matured_labels: 500
+      bootstrap_iterations: 1000
+
+    label_pipeline_stalled:
+      provenance: DERIVED
+      # Silent label-pipeline failure is the most common way monitoring dies:
+      # nothing alerts, because nothing is being measured. This is the watchdog.
+      # 30d maturation + 7d slack for batch delivery.
+      max_hours_without_matured_label: 888
+
+# =============================================================================
+# 3. LABEL MATURATION
+# =============================================================================
+labels:
+  provenance: STANDARD
+  # Structural, not chosen: the target IS "readmitted within 30 days", so a
+  # label cannot exist before 30 days have passed.
+  maturation_days: 30
+  source: "target definition — readmitted within 30 days of discharge"
+
+  simulation:
+    # The Phase 6 replay compresses the clock so maturation is demonstrable in
+    # an afternoon. The compression is cosmetic; the ordering and the delay
+    # structure are preserved, which is what the monitoring logic depends on.
+    provenance: DERIVED
+    seconds_per_simulated_day: 60
+    note: "compressed clock for demonstration; documented as such in docs/MONITORING.md"
+
+# =============================================================================
+# 4. PROMOTION GATES
+#
+# Every gate is executable code in mlservice.retraining.gates, unit-tested with
+# deliberately-bad models that must fail each gate INDEPENDENTLY. A challenger
+# is promoted only if ALL gates pass; otherwise it stays in Staging, an alert
+# fires, and the failing gate is named in the log.
+# =============================================================================
+promotion:
+  performance:
+    provenance: DERIVED
+    metric: pr_auc
+    # Non-inferiority, not strict improvement. Demanding an improvement on every
+    # scheduled refresh would block legitimate freshness updates and push the
+    # operator toward disabling the gate — a gate that gets disabled protects
+    # nothing. The margin is one quarter of the expected bootstrap SE at
+    # n~14k test rows, so it tolerates noise without tolerating regression.
+    non_inferiority_margin: 0.005
+    evaluated_on: current_window_matured_labels
+    require_non_overlapping_ci_vs_baseline: true
+
+  calibration:
+    provenance: DERIVED
+    # THIS GATE IS THE THESIS OF THE PROJECT.
+    # A challenger that discriminates better but calibrates worse is a
+    # REGRESSION for a health-adjacent use case: a probability that cannot be
+    # trusted cannot support a decision, whatever its ranking quality. Most
+    # portfolio projects never measure calibration at all; this one blocks
+    # deployment on it.
+    max_brier_ratio_vs_incumbent: 1.02   # at most 2% worse
+    max_ece: 0.05                        # STANDARD: 5% mean absolute gap, 10 bins
+    ece_bins: 10
+    require_reliability_diagram: true
+
+  subgroup:
+    provenance: DERIVED
+    # Measured against the INCUMBENT's existing disparity rather than an
+    # absolute fairness constant. No absolute number here would be defensible
+    # on this data, and inventing one is worse than declining to: it implies a
+    # guarantee the evaluation cannot support. What IS defensible is "do not
+    # make it worse", which is what this encodes.
+    dimensions: [race, gender, age_band]
+    min_subgroup_n: 500                  # below this the CI is too wide to act on
+    max_relative_gap_widening: 0.20
+    report_all_subgroups: true           # including unflattering ones
+
+  behavioral:
+    provenance: DERIVED
+    # Catches a corrupted feature pipeline that aggregate metrics sail past:
+    # a transform that silently drops a column can leave PR-AUC almost intact
+    # while making the model nonsense.
+    required_pass_rate: 1.0
+    suites: [invariance, directional, robustness]
+
+  operational:
+    provenance: DERIVED
+    require_artifact_loads: true
+    require_feature_schema_hash_match: true
+    canary_p99_within_slo: true
+
+  data_quality:
+    provenance: DERIVED
+    require_suite_pass: true
+    # A feature whose missingness jumps by 10 percentage points is usually an
+    # upstream break, not a population change. Retraining on it bakes the break
+    # into the model.
+    max_missingness_increase_pct_points: 10.0
+
+# =============================================================================
+# 5. RETRAINING TRIGGERS
+# =============================================================================
+retraining:
+  triggers:
+    scheduled:
+      provenance: DERIVED
+      enabled: true
+      cron: "0 3 1 * *"              # 03:00 on the 1st, simulated clock
+      rationale: "baseline freshness even absent drift"
+
+    drift:
+      provenance: DERIVED
+      enabled: true
+      requires: "drift.alert.data_drift sustained for its consecutive_windows"
+
+    performance:
+      provenance: DERIVED
+      enabled: true
+      requires: "drift.alert.label_drift breached"
+      rationale: "the signal that actually matters, once labels mature"
+
+    manual:
+      provenance: STANDARD
+      enabled: true
+
+  # Explicitly NOT a trigger: a single feature breaching in a single window.
+  # Retraining on noise burns compute and, worse, ships a model nobody asked
+  # for on evidence nobody checked.
+  not_triggers:
+    - "single feature breaching in a single window"
+    - "prediction drift without a corresponding data-drift signal"
+
+# =============================================================================
+# 6. ROLLOUT
+# =============================================================================
+rollout:
+  canary:
+    provenance: DERIVED
+    traffic_percent: 10
+    # Hold by VOLUME, not wall-clock: 1000 predictions gives a usable read on
+    # p99 and score distribution. A time-based hold on a low-traffic demo would
+    # promote on almost no evidence.
+    min_predictions_before_promote: 1000
+    auto_rollback_on_breach: true
+    breach_conditions:
+      - "canary p99 latency above slo.latency.slo_p99_ms"
+      - "canary 5xx ratio above slo.error_rate.page_5xx_ratio"
+      - "canary mean predicted probability outside training CI"
+
+  rollback:
+    provenance: DERIVED
+    # Two levers because there are two layers. The registry alias flip is
+    # instant and does not need a deploy; the k8s rollout undo handles the case
+    # where the container image itself is the problem.
+    mechanisms:
+      - "MLflow registry alias flip (champion -> previous version)"
+      - "kubectl rollout undo deployment/readmission-api"
+    max_seconds_to_rollback: 120
+    require_tested_path: true
