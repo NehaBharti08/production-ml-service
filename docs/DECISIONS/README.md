@@ -11,8 +11,8 @@ precede Phase 1 ones.
 |:--|:--|:--|:--|
 | [0001](0001-local-first-no-managed-cloud.md) | Local-first infrastructure, no managed cloud | 0 | Accepted |
 | [0002](0002-calibration-as-deployment-gate.md) | Calibration is a deployment gate, not a report | 0 | Accepted |
-| 0003 | Dataset selection — Diabetes 130-US Hospitals | 1 | Pending |
-| 0004 | Temporal split on an `encounter_id` proxy | 1 | Pending |
+| [0003](0003-dataset-selection.md) | Dataset selection — Diabetes 130-US Hospitals | 1 | Accepted |
+| [0004](0004-temporal-split-proxy.md) | Chronological split on an `encounter_id` proxy | 1 | Accepted |
 | 0005 | Drift thresholds by empirical null calibration | 6 | Pending |
 
 ## Why these exist

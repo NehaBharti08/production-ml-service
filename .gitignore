@@ -60,6 +60,12 @@ reports/*.html
 reports/*.json
 !reports/.gitkeep
 
+# Exception: the data audit is aggregate statistics only — no row-level records,
+# longest array is 20 elements, 11 KB. It is the provenance for
+# docs/DATA_AUDIT.md, so committing it lets a reviewer check the document's
+# prose against the numbers the code actually produced.
+!reports/data_audit.json
+
 # --- Python ------------------------------------------------------------------
 .venv/
 venv/

@@ -1,0 +1,597 @@
+{
+  "dataset": {
+    "rows": 101766,
+    "columns": 50,
+    "unique_patients": 71518,
+    "encounters_per_patient": 1.423,
+    "matches_expected_shape": true
+  },
+  "missingness": {
+    "sentinel_missing": {
+      "weight": {
+        "n": 98569,
+        "pct": 96.86
+      },
+      "medical_specialty": {
+        "n": 49949,
+        "pct": 49.08
+      },
+      "payer_code": {
+        "n": 40256,
+        "pct": 39.56
+      },
+      "race": {
+        "n": 2273,
+        "pct": 2.23
+      },
+      "diag_3": {
+        "n": 1423,
+        "pct": 1.4
+      },
+      "diag_2": {
+        "n": 358,
+        "pct": 0.35
+      },
+      "diag_1": {
+        "n": 21,
+        "pct": 0.02
+      }
+    },
+    "native_nan": {
+      "max_glu_serum": {
+        "n": 96420,
+        "pct": 94.75,
+        "meaning": "test not ordered \u2014 a clinical decision, therefore informative"
+      },
+      "A1Cresult": {
+        "n": 84748,
+        "pct": 83.28,
+        "meaning": "test not ordered \u2014 a clinical decision, therefore informative"
+      }
+    },
+    "zero_variance_columns": [
+      "examide",
+      "citoglipton"
+    ],
+    "near_zero_variance_columns": {
+      "chlorpropamide": 99.9155,
+      "acetohexamide": 99.999,
+      "tolbutamide": 99.9774,
+      "acarbose": 99.6973,
+      "miglitol": 99.9627,
+      "troglitazone": 99.9971,
+      "tolazamide": 99.9617,
+      "glipizide-metformin": 99.9872,
+      "glimepiride-pioglitazone": 99.999,
+      "metformin-rosiglitazone": 99.998,
+      "metformin-pioglitazone": 99.999
+    }
+  },
+  "imbalance": {
+    "raw_classes": {
+      "NO": 54864,
+      ">30": 35545,
+      "<30": 11357
+    },
+    "binary_positive": 11357,
+    "binary_negative": 90409,
+    "positive_rate": 0.111599,
+    "imbalance_ratio": 7.96,
+    "majority_class_accuracy": 0.888401,
+    "interpretation": "Predicting 'never readmitted' scores 88.84% accuracy with zero recall. Accuracy is therefore not a meaningful headline metric; PR-AUC against the 11.16% prevalence floor is."
+  },
+  "leakage": {
+    "rows_in": 101766,
+    "rows_out": 69990,
+    "rows_removed": 31776,
+    "pct_removed": 31.22,
+    "steps": [
+      {
+        "step": "exclude_expired",
+        "reason": "deterministic label \u2014 a dead patient cannot be readmitted",
+        "n_rows": 1652,
+        "n_positive": 0,
+        "positive_rate": 0.0,
+        "codes": [
+          11,
+          19,
+          20,
+          21
+        ],
+        "classification": "LEAKAGE"
+      },
+      {
+        "step": "exclude_hospice",
+        "reason": "end-of-life care \u2014 readmission is not a quality signal here",
+        "n_rows": 771,
+        "n_positive": 43,
+        "positive_rate": 0.055772,
+        "codes": [
+          13,
+          14
+        ],
+        "classification": "CLINICAL_JUDGEMENT"
+      },
+      {
+        "step": "first_encounter_only",
+        "reason": "prevent the same patient straddling the split",
+        "rows_before": 99343,
+        "rows_after": 69990,
+        "rows_removed": 29353,
+        "unique_patients": 69990
+      },
+      {
+        "step": "normalise_missing",
+        "columns_affected": 9,
+        "detail": {
+          "race": {
+            "sentinel": 1919,
+            "pct": 2.74,
+            "action": "-> Unknown category"
+          },
+          "weight": {
+            "sentinel": 67202,
+            "pct": 96.02,
+            "action": "-> Unknown category"
+          },
+          "payer_code": {
+            "sentinel": 30416,
+            "pct": 43.46,
+            "action": "-> Unknown category"
+          },
+          "medical_specialty": {
+            "sentinel": 33654,
+            "pct": 48.08,
+            "action": "-> Unknown category"
+          },
+          "diag_1": {
+            "sentinel": 10,
+            "pct": 0.01,
+            "action": "-> Unknown category"
+          },
+          "diag_2": {
+            "sentinel": 293,
+            "pct": 0.42,
+            "action": "-> Unknown category"
+          },
+          "diag_3": {
+            "sentinel": 1224,
+            "pct": 1.75,
+            "action": "-> Unknown category"
+          },
+          "max_glu_serum": {
+            "native_nan": 66641,
+            "pct": 95.22,
+            "action": "-> NotMeasured category (test not ordered)"
+          },
+          "A1Cresult": {
+            "native_nan": 57144,
+            "pct": 81.65,
+            "action": "-> NotMeasured category (test not ordered)"
+          }
+        }
+      },
+      {
+        "step": "group_diagnoses",
+        "reason": "717 raw ICD-9 codes would one-hot into mostly-noise columns",
+        "cardinality_before": {
+          "diag_1": 695,
+          "diag_2": 724,
+          "diag_3": 757
+        },
+        "cardinality_after": {
+          "diag_1": 10,
+          "diag_2": 10,
+          "diag_3": 10
+        },
+        "bands": [
+          "Circulatory",
+          "Diabetes",
+          "Digestive",
+          "Genitourinary",
+          "Injury",
+          "Musculoskeletal",
+          "Neoplasms",
+          "Other",
+          "Respiratory",
+          "Unknown"
+        ]
+      },
+      {
+        "step": "drop_columns",
+        "columns": {
+          "weight": "96.86% missing. Imputing a value present in 3% of records would manufacture a variable rather than measure one. The honest move is to drop it and say so.",
+          "examide": "Zero variance \u2014 constant 'No' across all 101,766 rows.",
+          "citoglipton": "Zero variance \u2014 constant 'No' across all 101,766 rows.",
+          "payer_code": "TIME-CONFOUNDED, not merely missing. Capture rises from 0% in the first encounter_id decile to 86% in the last, because the field was rolled out mid-period. Under a chronological split the model would learn 'payer_code present' as a proxy for 'later era' \u2014 an artifact of data capture with no clinical meaning, which cannot generalise. See docs/DECISIONS/0004-temporal-split-proxy.md."
+        },
+        "n_dropped": 4
+      },
+      {
+        "step": "complete",
+        "rows_in": 101766,
+        "rows_out": 69990,
+        "rows_removed": 31776,
+        "pct_removed": 31.22,
+        "positive_rate": 0.089799
+      }
+    ]
+  },
+  "time_proxy": {
+    "passed": true,
+    "claim": "chronological split (encounter_id proxy, empirically verified)",
+    "n_trending": 5,
+    "n_signals": 8,
+    "threshold": 3,
+    "criteria": {
+      "min_abs_rho": 0.8,
+      "max_p_value": 0.01
+    },
+    "signals": [
+      {
+        "name": "medical_specialty missing",
+        "first_decile": 0.3638,
+        "last_decile": 0.6791,
+        "delta": 0.3153,
+        "spearman_rho": 0.8909,
+        "p_value": 0.000542,
+        "trends": true
+      },
+      {
+        "name": "payer_code missing",
+        "first_decile": 1.0,
+        "last_decile": 0.1379,
+        "delta": -0.8621,
+        "spearman_rho": -0.8754,
+        "p_value": 0.000905,
+        "trends": true
+      },
+      {
+        "name": "A1Cresult measured",
+        "first_decile": 0.1878,
+        "last_decile": 0.1786,
+        "delta": -0.0091,
+        "spearman_rho": 0.1152,
+        "p_value": 0.75142,
+        "trends": false
+      },
+      {
+        "name": "max_glu_serum measured",
+        "first_decile": 0.0887,
+        "last_decile": 0.0114,
+        "delta": -0.0773,
+        "spearman_rho": -0.6848,
+        "p_value": 0.028883,
+        "trends": false
+      },
+      {
+        "name": "insulin prescribed",
+        "first_decile": 0.4649,
+        "last_decile": 0.6016,
+        "delta": 0.1367,
+        "spearman_rho": 0.8909,
+        "p_value": 0.000542,
+        "trends": true
+      },
+      {
+        "name": "metformin prescribed",
+        "first_decile": 0.1676,
+        "last_decile": 0.216,
+        "delta": 0.0483,
+        "spearman_rho": 0.9636,
+        "p_value": 7e-06,
+        "trends": true
+      },
+      {
+        "name": "pioglitazone prescribed",
+        "first_decile": 0.0368,
+        "last_decile": 0.0796,
+        "delta": 0.0427,
+        "spearman_rho": 0.903,
+        "p_value": 0.000344,
+        "trends": true
+      },
+      {
+        "name": "rosiglitazone prescribed",
+        "first_decile": 0.0604,
+        "last_decile": 0.022,
+        "delta": -0.0384,
+        "spearman_rho": -0.1879,
+        "p_value": 0.603218,
+        "trends": false
+      }
+    ],
+    "discontinuity_rosiglitazone": {
+      "column": "rosiglitazone",
+      "n_bins": 20,
+      "rates": [
+        0.0527,
+        0.0682,
+        0.0601,
+        0.0686,
+        0.0635,
+        0.0706,
+        0.0723,
+        0.0798,
+        0.0786,
+        0.0786,
+        0.077,
+        0.0758,
+        0.0735,
+        0.0772,
+        0.0757,
+        0.0715,
+        0.0348,
+        0.0283,
+        0.0206,
+        0.0234
+      ],
+      "largest_drop_at_bin": 15,
+      "largest_drop_pct_points": -3.67,
+      "percentile_of_ordering": 80.0,
+      "ratio_to_typical_change": 7.7
+    },
+    "discontinuity_pioglitazone": {
+      "column": "pioglitazone",
+      "n_bins": 20,
+      "rates": [
+        0.0277,
+        0.046,
+        0.0478,
+        0.0533,
+        0.0542,
+        0.0784,
+        0.0753,
+        0.0731,
+        0.0747,
+        0.0796,
+        0.0698,
+        0.0829,
+        0.0884,
+        0.0839,
+        0.0873,
+        0.0823,
+        0.0902,
+        0.0861,
+        0.0767,
+        0.0825
+      ],
+      "largest_drop_at_bin": 9,
+      "largest_drop_pct_points": -0.98,
+      "percentile_of_ordering": 50.0,
+      "ratio_to_typical_change": 1.5
+    }
+  },
+  "censoring": {
+    "n_bins": 20,
+    "positive_rate_per_bin": [
+      0.0971,
+      0.0963,
+      0.096,
+      0.1055,
+      0.0997,
+      0.0977,
+      0.0963,
+      0.096,
+      0.1046,
+      0.1046,
+      0.0977,
+      0.0917,
+      0.09,
+      0.0909,
+      0.0872,
+      0.0754,
+      0.0815,
+      0.076,
+      0.07,
+      0.0417
+    ],
+    "stable_rate_first_80pct": 0.0954,
+    "final_bin_rate": 0.0417,
+    "final_bin_relative_drop": -0.5629,
+    "buffer_fraction": 0.05,
+    "interpretation": "A first encounter is labelled positive only if a later encounter exists in the data. Near the end of collection those later encounters are unobserved, so the label is missing rather than negative. The final bin is discarded as a censoring buffer."
+  },
+  "split": {
+    "claim": "chronological split (encounter_id proxy, empirically verified)",
+    "censoring_buffer": {
+      "rows_dropped": 3500,
+      "pct_dropped": 5.0,
+      "positive_rate_dropped_region": 0.0417,
+      "positive_rate_retained": 0.0923,
+      "reason": "right-censoring \u2014 readmissions after the collection window are unobservable"
+    },
+    "sizes": {
+      "train": 39894,
+      "val": 13298,
+      "test": 13298
+    },
+    "positive_rate": {
+      "train": 0.098712,
+      "val": 0.089863,
+      "test": 0.07565
+    },
+    "encounter_id_boundaries": {
+      "train_min": 12522,
+      "train_max": 156680970,
+      "val_max": 220877166,
+      "test_max": 366195950
+    }
+  },
+  "separability": {
+    "train_roc_auc": 1.0,
+    "test_roc_auc": 0.5185,
+    "test_pr_auc": 0.079,
+    "tree_depth": 47,
+    "n_leaves": 5034,
+    "alarm_threshold": 0.95,
+    "alarm_triggered": false,
+    "interpretation": "An unconstrained tree memorises the training set (1.000 AUC) and generalises poorly (0.519 test AUC). This gap is the expected, healthy result: the problem is genuinely hard. A test AUC above 0.95 would indicate leakage or a synthetic dataset."
+  },
+  "baselines": [
+    {
+      "name": "majority_class",
+      "description": "Always predicts 'not readmitted'",
+      "accuracy": 0.924349526244548,
+      "recall": 0.0,
+      "pr_auc": 0.07565047375545195,
+      "roc_auc": 0.5,
+      "brier": 0.06992747957602763,
+      "pr_auc_ci": null,
+      "notes": "High accuracy, zero recall. It never identifies a single patient at risk. This is why accuracy is not reported as a headline metric for this task.",
+      "extra": {}
+    },
+    {
+      "name": "prevalence_constant",
+      "description": "Predicts P(readmit)=0.0757 for every patient",
+      "accuracy": 0.924349526244548,
+      "recall": 0.0,
+      "pr_auc": 0.07565047375545195,
+      "roc_auc": 0.5,
+      "brier": 0.06992747957602763,
+      "pr_auc_ci": null,
+      "notes": "The Brier score to beat. A model that cannot improve on this is not producing usable probabilities, whatever its ranking metrics.",
+      "extra": {}
+    },
+    {
+      "name": "heuristic_number_inpatient",
+      "description": "Ranks patients by number_inpatient (prior inpatient admissions)",
+      "accuracy": 0.8453902842532711,
+      "recall": 0.14910536779324055,
+      "pr_auc": 0.08622026595636137,
+      "roc_auc": 0.5267493234540043,
+      "brier": 0.07495723041058806,
+      "pr_auc_ci": [
+        0.07955644596943595,
+        0.09587164061074664
+      ],
+      "notes": "The bar that matters. Available at admission with no model. Any trained model must clear this with non-overlapping confidence intervals to justify the operational cost of running it.",
+      "extra": {
+        "threshold": 0.0,
+        "flagged_pct": 10.15
+      }
+    }
+  ],
+  "subgroups": {
+    "race": {
+      "Caucasian": {
+        "n": 52305,
+        "pct": 74.73,
+        "positive_rate": 0.0919,
+        "sufficient_for_analysis": true
+      },
+      "AfricanAmerican": {
+        "n": 12627,
+        "pct": 18.04,
+        "positive_rate": 0.0867,
+        "sufficient_for_analysis": true
+      },
+      "Unknown": {
+        "n": 1919,
+        "pct": 2.74,
+        "positive_rate": 0.0735,
+        "sufficient_for_analysis": true
+      },
+      "Hispanic": {
+        "n": 1501,
+        "pct": 2.14,
+        "positive_rate": 0.0813,
+        "sufficient_for_analysis": true
+      },
+      "Other": {
+        "n": 1150,
+        "pct": 1.64,
+        "positive_rate": 0.0687,
+        "sufficient_for_analysis": true
+      },
+      "Asian": {
+        "n": 488,
+        "pct": 0.7,
+        "positive_rate": 0.084,
+        "sufficient_for_analysis": false
+      }
+    },
+    "gender": {
+      "Female": {
+        "n": 37239,
+        "pct": 53.21,
+        "positive_rate": 0.0904,
+        "sufficient_for_analysis": true
+      },
+      "Male": {
+        "n": 32748,
+        "pct": 46.79,
+        "positive_rate": 0.0892,
+        "sufficient_for_analysis": true
+      },
+      "Unknown/Invalid": {
+        "n": 3,
+        "pct": 0.0,
+        "positive_rate": 0.0,
+        "sufficient_for_analysis": false
+      }
+    },
+    "age": {
+      "[70-80)": {
+        "n": 17751,
+        "pct": 25.36,
+        "positive_rate": 0.1024,
+        "sufficient_for_analysis": true
+      },
+      "[60-70)": {
+        "n": 15689,
+        "pct": 22.42,
+        "positive_rate": 0.0902,
+        "sufficient_for_analysis": true
+      },
+      "[50-60)": {
+        "n": 12351,
+        "pct": 17.65,
+        "positive_rate": 0.0712,
+        "sufficient_for_analysis": true
+      },
+      "[80-90)": {
+        "n": 11110,
+        "pct": 15.87,
+        "positive_rate": 0.1079,
+        "sufficient_for_analysis": true
+      },
+      "[40-50)": {
+        "n": 6828,
+        "pct": 9.76,
+        "positive_rate": 0.0741,
+        "sufficient_for_analysis": true
+      },
+      "[30-40)": {
+        "n": 2692,
+        "pct": 3.85,
+        "positive_rate": 0.0698,
+        "sufficient_for_analysis": true
+      },
+      "[90-100)": {
+        "n": 1761,
+        "pct": 2.52,
+        "positive_rate": 0.0954,
+        "sufficient_for_analysis": true
+      },
+      "[20-30)": {
+        "n": 1121,
+        "pct": 1.6,
+        "positive_rate": 0.074,
+        "sufficient_for_analysis": true
+      },
+      "[10-20)": {
+        "n": 534,
+        "pct": 0.76,
+        "positive_rate": 0.0487,
+        "sufficient_for_analysis": true
+      },
+      "[0-10)": {
+        "n": 153,
+        "pct": 0.22,
+        "positive_rate": 0.0196,
+        "sufficient_for_analysis": false
+      }
+    }
+  }
+}
