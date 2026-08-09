@@ -1,0 +1,14 @@
+# Datasource provisioned from file, never clicked in. A datasource configured
+# through the UI lives only in the Grafana volume: not committed, not
+# reviewable, and gone after `make clean`.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s     # must match prometheus scrape_interval

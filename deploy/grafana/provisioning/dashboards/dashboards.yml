@@ -1,0 +1,19 @@
+# Dashboards are loaded from committed JSON files. Phase 5 adds:
+#   golden-signals.json  traffic, latency, errors, saturation
+#   model-health.json    prediction distribution, rolling PR-AUC, calibration
+#   drift.json           per-feature drift scores against their thresholds
+apiVersion: 1
+
+providers:
+  - name: mlservice
+    orgId: 1
+    folder: ML Service
+    type: file
+    disableDeletion: true
+    # Editing in the UI is allowed for exploration, but the file on disk is the
+    # source of truth and overwrites the UI state on restart.
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

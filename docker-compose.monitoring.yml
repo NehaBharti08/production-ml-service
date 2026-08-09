@@ -1,0 +1,70 @@
+# =============================================================================
+# Monitoring overlay — Prometheus + Grafana.
+#
+#   make full     docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+#
+# An overlay rather than a profile so the core stack stays runnable on its own.
+# Day-to-day development does not need 1 GB of observability running.
+# =============================================================================
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 15 days is plenty for a demo and keeps the volume small. Drift analysis
+      # reads the prediction log, not Prometheus, so long metric retention buys
+      # nothing here.
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle          # reload rules without a restart
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  grafana:
+    image: grafana/grafana:11.5.0
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      # Datasources and dashboards are provisioned from files, never clicked in.
+      # A dashboard that exists only in a volume is not committed, cannot be
+      # reviewed, and disappears with `make clean` — so dashboards are code.
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+volumes:
+  prometheus-data:
+  grafana-data:
