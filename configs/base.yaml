@@ -33,7 +33,9 @@ logging:
 
 data:
   dataset_name: diabetes_130_us_hospitals
-  source_url: https://archive.ics.uci.edu/static/public/296/diabetes+130+us+hospitals+for+years+1999+2008.zip
+  # Exact slug matters: UCI uses '+' for spaces but keeps literal hyphens in
+  # '130-us' and '1999-2008'. Getting it wrong returns a 404, not a redirect.
+  source_url: https://archive.ics.uci.edu/static/public/296/diabetes+130-us+hospitals+for+years+1999-2008.zip
   target_column: readmitted
   positive_label: "<30"
 

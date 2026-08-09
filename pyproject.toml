@@ -33,6 +33,7 @@ dev = [
     "mypy>=1.13",
     "pre-commit>=4.0",
     "types-PyYAML>=6.0",
+    "types-requests>=2.32",
 ]
 
 train = [
@@ -110,6 +111,9 @@ ignore = [
 "tests/**" = ["ARG", "PD"]
 "notebooks/**" = ["T20", "E402"]
 "scripts/**" = ["T20"]
+# This module generates prose for a markdown document. En dashes, ρ and × are
+# deliberate typography in the rendered output, not ambiguous-character typos.
+"src/mlservice/data/render_audit.py" = ["RUF001"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["mlservice"]

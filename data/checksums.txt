@@ -1,0 +1,9 @@
+# SHA256 checksums for the raw dataset archive.
+#
+# Committed so the pipeline is reproducible without committing
+# patient-level data. Verified on every download; a mismatch means the
+# upstream archive changed and every downstream number would silently
+# change with it.
+#
+# Format: <sha256>  <filename>
+f82ac129da2ddd2299391ff6fbae3a6a58b3edcf59ac9d7bd480c00fe453112a  diabetes-130-us-hospitals.zip
