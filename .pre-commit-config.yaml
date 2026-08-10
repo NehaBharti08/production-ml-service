@@ -63,7 +63,13 @@ repos:
           - pydantic-settings>=2.5
           - structlog>=24.4
           - types-PyYAML>=6.0
+          - types-requests>=2.32
           - typer>=0.12
+          # Hook mypy runs in an isolated env, so anything imported by
+          # src/ must be listed here even when it is already installed
+          # locally — otherwise the hook fails where `make typecheck` passes.
+          - pandas-stubs
+          - numpy
 
   # --- Notebook output stripping --------------------------------------------
   - repo: https://github.com/kynan/nbstripout

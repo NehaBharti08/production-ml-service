@@ -42,16 +42,45 @@ That modest ceiling is a **feature, not a limitation.** A model that cannot be
 made excellent is a model that must be carefully operated, which is the entire
 point.
 
+### What the audit found
+
+The [data audit](docs/DATA_AUDIT.md) is generated from the code, not written by
+hand. Four findings changed the pipeline:
+
+- **A deterministic label leak.** 1,652 expired-discharge encounters contain
+  **exactly zero** positive labels — a dead patient cannot be readmitted, so a
+  model would learn `died → not readmitted` from the discharge code. Removed.
+  Hospice discharges are excluded too, but for a *different* reason: they are
+  not deterministic (5.6% positive), so calling them leakage would overstate it.
+- **The time proxy holds — verified, not assumed.** This dataset has no
+  timestamp column at all. 5 of 8 independent signals shift monotonically across
+  `encounter_id`, and rosiglitazone prescribing shows a sharp
+  **7.7× discontinuity at the 80th percentile** — the 2007 Avandia safety
+  collapse. The ordering reproduces a *dated real-world event*, which is far
+  stronger evidence than a trend test. See
+  [ADR 0004](docs/DECISIONS/0004-temporal-split-proxy.md).
+- **Right-censoring at the tail.** A first encounter can only be labelled
+  positive if a later encounter exists in the data. The positive rate collapses
+  56% in the final 5% of the ordering — labels are *missing, not negative*. A
+  censoring buffer now discards that region before splitting.
+- **`payer_code` is time-confounded, not merely missing.** Capture goes from
+  100% missing to 14% across the period. Under a chronological split the model
+  would learn it as a proxy for *era*. Dropped.
+
+The dataset is not trivially separable: an unconstrained decision tree reaches
+**0.519 test ROC-AUC**. On the synthetic symptom-to-disease datasets the same
+tree reaches ~100%, which is precisely why those datasets prove nothing.
+
 ---
 
 ## Status
 
-🚧 **Phase 0 of 8 — Foundation.** This README fills in as the phases land.
+🚧 **Phase 1 of 8 complete.** This README fills in as the phases land.
 
 | Phase | Scope | State |
 |:--|:--|:--|
-| 0 | Foundation — config, logging, tooling | 🟡 in progress |
-| 1 | Data audit and honest baseline | ⬜ |
+| 0 | Foundation — config, logging, tooling | ✅ done |
+| 1 | Data audit and honest baseline | ✅ done |
 | 2 | Model, calibration, subgroups, model card | ⬜ |
 | 3 | FastAPI serving + prediction log | ⬜ |
 | 4 | Tests, behaviour suite, CI, load test | ⬜ |

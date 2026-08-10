@@ -57,10 +57,95 @@ def _root(
         logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
 
 
+data_app = typer.Typer(help="Dataset download, audit and split.", no_args_is_help=True)
+app.add_typer(data_app, name="data")
+
+
 @app.command()
 def version() -> None:
     """Print the package version."""
     typer.echo(__version__)
+
+
+@data_app.command("download")
+def data_download(
+    force: Annotated[bool, typer.Option("--force", help="Re-download even if cached.")] = False,
+) -> None:
+    """Download the dataset and verify it against the committed checksum."""
+    from mlservice.data.download import download
+
+    with request_context():
+        result = download(force=force)
+    typer.secho(
+        f"  OK    {result.archive.name} ({'cached' if result.was_cached else 'downloaded'})",
+        fg=typer.colors.GREEN,
+    )
+    typer.echo(f"        sha256 {result.sha256}")
+
+
+@data_app.command("audit")
+def data_audit(
+    write_splits: Annotated[
+        bool, typer.Option("--write-splits/--no-write-splits", help="Persist train/val/test.")
+    ] = True,
+) -> None:
+    """Run the full data audit and write the findings.
+
+    Emits reports/data_audit.json, which docs/DATA_AUDIT.md is generated from —
+    so the document cannot drift away from what the code actually computed.
+    """
+    from mlservice.data.audit import load_raw, run_audit
+
+    settings = get_settings()
+
+    with request_context():
+        raw = load_raw()
+        report, split_result = run_audit(raw)
+
+        out = settings.paths.reports / "data_audit.json"
+        report.to_json(out)
+
+        if write_splits:
+            processed = settings.paths.data_processed
+            processed.mkdir(parents=True, exist_ok=True)
+            for name, frame in (
+                ("train", split_result.train),
+                ("val", split_result.val),
+                ("test", split_result.test),
+            ):
+                frame.to_parquet(processed / f"{name}.parquet", index=False)
+
+            # The drift baseline: written once, then left alone. A reference
+            # window that silently tracks recent data cannot detect drift,
+            # because it drifts along with it.
+            reference = settings.paths.data_reference
+            reference.mkdir(parents=True, exist_ok=True)
+            split_result.train.to_parquet(reference / "reference_window.parquet", index=False)
+
+    proxy = report.time_proxy
+    colour = typer.colors.GREEN if proxy["passed"] else typer.colors.YELLOW
+    typer.secho(
+        f"  {'OK  ' if proxy['passed'] else 'WARN'}  time proxy: {proxy['claim']}",
+        fg=colour,
+        bold=True,
+    )
+    typer.echo(f"        {proxy['n_trending']}/{proxy['n_signals']} signals trend monotonically")
+
+    sep = report.separability
+    typer.secho(
+        f"  {'FAIL' if sep['alarm_triggered'] else 'OK  '}  separability: "
+        f"test ROC-AUC {sep['test_roc_auc']} (alarm above {sep['alarm_threshold']})",
+        fg=typer.colors.RED if sep["alarm_triggered"] else typer.colors.GREEN,
+    )
+
+    lk = report.leakage
+    typer.echo(f"        cleaning removed {lk['rows_removed']:,} rows ({lk['pct_removed']}%)")
+    typer.echo(f"        report -> {out}")
+
+    from mlservice.data.render_audit import render_to_file
+
+    doc = render_to_file()
+    typer.echo(f"        docs   -> {doc}")
 
 
 @app.command("config")
