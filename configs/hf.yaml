@@ -1,0 +1,40 @@
+# =============================================================================
+# Hugging Face Space (Docker SDK, cpu-basic free tier).
+#
+# The Space is a PUBLIC DEMO ENDPOINT, not the monitoring substrate:
+#
+#   * Space disk is ephemeral (50 GB, not persisted across restarts), so the
+#     prediction log written here is transient. The real monitoring loop runs
+#     locally against the compose stack.
+#   * There is no MLflow server reachable from the Space. The model is pulled
+#     from an HF Model repo at startup, which is also why model binaries never
+#     enter git.
+#
+# Space README.md frontmatter must declare: sdk: docker, app_port: 7860.
+# =============================================================================
+
+logging:
+  level: INFO
+  format: json
+
+mlflow:
+  # No registry in the Space. model_loader falls back to the HF-downloaded
+  # artifact; an empty URI makes that fallback explicit rather than a timeout.
+  tracking_uri: ""
+
+model:
+  # Populated at build time by the HF deploy workflow.
+  local_fallback: models/champion/model.joblib
+
+api:
+  port: 7860              # HF Spaces default for Docker SDK
+  workers: 1              # 2 vCPU; a second worker buys contention, not throughput
+  max_batch_size: 100     # smaller than local — this endpoint is public
+  cors_origins:
+    - https://huggingface.co
+
+paths:
+  # /tmp is writable in the Space; the repo directory may not be.
+  data_monitoring: /tmp/monitoring
+  logs: /tmp/logs
+  reports: /tmp/reports

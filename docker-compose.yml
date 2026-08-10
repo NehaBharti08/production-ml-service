@@ -1,0 +1,138 @@
+# =============================================================================
+# Core stack: api + mlflow + postgres
+#
+#   make serve     start
+#   make down      stop
+#   make full      add prometheus + grafana (docker-compose.monitoring.yml)
+#
+# COMPOSE_PROJECT_NAME is pinned in .env because this checkout lives in a
+# directory whose name contains spaces and parentheses; Docker would otherwise
+# derive an invalid project name from it.
+# =============================================================================
+
+name: production-ml-service
+
+services:
+  # ---------------------------------------------------------------------------
+  # Postgres — MLflow's backend store.
+  #
+  # A file-based store would be simpler, but it cannot serve concurrent readers,
+  # which breaks the moment the API and a training job both talk to MLflow.
+  # Artifacts still go to a volume; only metadata lives here.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mlflow
+      # Local-only credential for a throwaway container on a loopback network.
+      # Not reused anywhere, not reachable off the host, and deliberately
+      # literal rather than an env var so `make serve` works from a fresh clone
+      # with no setup. detect-secrets is right to flag the shape, so the
+      # exemption is recorded here rather than by loosening the hook.
+      POSTGRES_PASSWORD: mlflow  # pragma: allowlist secret
+      POSTGRES_DB: mlflow
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # MLflow's migrations fail confusingly against a half-started Postgres,
+      # so dependents wait on this rather than on the container merely existing.
+      test: ["CMD-SHELL", "pg_isready -U mlflow -d mlflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ---------------------------------------------------------------------------
+  # MLflow — experiment tracking and model registry.
+  # ---------------------------------------------------------------------------
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.19.0
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Same local-only credential as the postgres service above. Kept as an
+      # env var rather than inline in `command:` because a folded YAML scalar
+      # collapses to a single line — an inline `#` comment there would comment
+      # out the rest of the command.
+      MLFLOW_BACKEND_STORE_URI: postgresql://mlflow:mlflow@postgres:5432/mlflow  # pragma: allowlist secret
+    # NOTE: every line below sits at the SAME indentation on purpose. In a YAML
+    # folded scalar (`>`), more-indented lines keep their newlines literally —
+    # which would leave `mlflow server` and `--host` as separate shell commands.
+    # Equal indentation folds them into one line joined by spaces.
+    command: >
+      sh -c "pip install --no-cache-dir psycopg2-binary==2.9.9 &&
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri $${MLFLOW_BACKEND_STORE_URI}
+      --artifacts-destination /mlartifacts
+      --serve-artifacts"
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-artifacts:/mlartifacts
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s          # the pip install on boot is slow the first time
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  # ---------------------------------------------------------------------------
+  # The service under test.
+  #
+  # Note it does NOT wait for MLflow to be healthy. That is deliberate: the API
+  # must be able to start and serve from its baked-in fallback model when the
+  # registry is unreachable. Availability should not depend on the tracking
+  # server, and the only way to be sure of that is to not couple them here.
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      - mlflow
+    environment:
+      MLSERVICE_ENV: local
+      MLSERVICE_LOGGING__FORMAT: json          # containers emit JSON, always
+      MLSERVICE_MLFLOW__TRACKING_URI: http://mlflow:5000
+      MLSERVICE_API__PORT: "8000"
+    ports:
+      - "8000:8000"
+    volumes:
+      # Prediction log — the raw material for every monitoring feature in
+      # Phases 5-7. Bind-mounted so the monitoring job can read it from the host.
+      - ./data/monitoring:/app/data/monitoring
+    healthcheck:
+      # Readiness, not liveness: this must fail while the model is unloaded,
+      # which is what makes the Phase 7 rollback demo work.
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health/ready').status==200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    # Must exceed api.graceful_shutdown_seconds (20s) so draining completes
+    # rather than being cut short by the runtime.
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  postgres-data:
+  mlflow-artifacts:

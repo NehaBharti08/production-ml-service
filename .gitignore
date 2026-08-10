@@ -31,7 +31,10 @@ data/monitoring/
 # --- Model binaries ----------------------------------------------------------
 # Models live in the MLflow registry (local) and an HF Model repo (remote),
 # never in git. Binaries in git make clones huge and diffs meaningless.
-models/
+#
+# Root-anchored: an unanchored `models/` would also match the source package
+# src/mlservice/models/, silently excluding the training code from the repo.
+/models/
 *.pkl
 *.pickle
 *.joblib

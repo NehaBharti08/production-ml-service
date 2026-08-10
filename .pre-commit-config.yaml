@@ -1,0 +1,89 @@
+# =============================================================================
+# Pre-commit hooks.
+#
+# Two of these are not style tools and must never be removed:
+#
+#   nbstripout       — a notebook output cell on this project can contain
+#                      patient-level rows. Stripping outputs at commit time is
+#                      the only reliable defence, because .gitignore does not
+#                      help once the notebook itself is tracked.
+#   detect-secrets   — credentials in git history survive every later fix.
+#
+#   install:  uv run pre-commit install
+#   run all:  uv run pre-commit run --all-files
+# =============================================================================
+
+default_language_version:
+  python: python3.11
+
+fail_fast: false
+
+repos:
+  # --- Baseline hygiene ------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.md$'          # trailing spaces are meaningful line breaks in md
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-case-conflict   # matters: this repo is developed on Windows, run on Linux
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: debug-statements
+
+      # Model artifacts, MLflow stores and dataset files all exceed this. The
+      # limit is the backstop for when .gitignore is wrong.
+      - id: check-added-large-files
+        args: [--maxkb=512]
+
+      - id: no-commit-to-branch
+        args: [--branch, main]    # phases land via PR, never direct to main
+
+  # --- Lint + format ---------------------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.2
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  # --- Types -----------------------------------------------------------------
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.18.2
+    hooks:
+      - id: mypy
+        files: ^src/
+        additional_dependencies:
+          - pydantic>=2.9
+          - pydantic-settings>=2.5
+          - structlog>=24.4
+          - types-PyYAML>=6.0
+          - typer>=0.12
+
+  # --- Notebook output stripping --------------------------------------------
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.1
+    hooks:
+      - id: nbstripout
+        name: strip notebook outputs (may contain patient rows)
+
+  # --- Secrets ---------------------------------------------------------------
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .secrets.baseline]
+        exclude: '(uv\.lock|\.secrets\.baseline)$'
+
+  # --- Commit message --------------------------------------------------------
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.2.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert]
