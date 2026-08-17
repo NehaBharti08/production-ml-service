@@ -111,9 +111,10 @@ ignore = [
 "tests/**" = ["ARG", "PD"]
 "notebooks/**" = ["T20", "E402"]
 "scripts/**" = ["T20"]
-# This module generates prose for a markdown document. En dashes, ρ and × are
+# These modules generate prose for markdown documents. En dashes, ρ and × are
 # deliberate typography in the rendered output, not ambiguous-character typos.
 "src/mlservice/data/render_audit.py" = ["RUF001"]
+"src/mlservice/models/render_card.py" = ["RUF001"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["mlservice"]
@@ -132,6 +133,7 @@ plugins = ["pydantic.mypy"]
 module = [
     "sklearn.*", "mlflow.*", "evidently.*", "matplotlib.*",
     "pandas.*", "scipy.*", "prometheus_client.*", "huggingface_hub.*",
+    "joblib.*",
 ]
 ignore_missing_imports = true
 
