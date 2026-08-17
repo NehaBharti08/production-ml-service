@@ -34,6 +34,11 @@ repos:
       - id: check-case-conflict   # matters: this repo is developed on Windows, run on Linux
       - id: mixed-line-ending
         args: [--fix=lf]
+        # Windows-native scripts are excluded: .gitattributes declares them
+        # eol=crlf because PowerShell and cmd require it, so forcing LF here
+        # would fight that rule on every commit — the hook "fixes" the file,
+        # git checks it back out as CRLF, and the loop repeats forever.
+        exclude: '\.(ps1|bat|cmd)$'
       - id: debug-statements
 
       # Model artifacts, MLflow stores and dataset files all exceed this. The
