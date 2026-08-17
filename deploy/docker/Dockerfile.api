@@ -32,6 +32,29 @@ RUN uv sync --locked --no-install-project --no-dev --group serve
 COPY src/ ./src/
 RUN uv sync --locked --no-dev --group serve
 
+# Strip build tooling from the venv.
+#
+# Not cosmetic — the Trivy gate caught two real HIGH CVEs here on the first run
+# that ever built this image:
+#
+#   jaraco.context 5.3.0  CVE-2026-23949  path traversal via malicious tar
+#   wheel          0.45.1 CVE-2026-24049  privilege escalation via bad wheel
+#
+# Neither is used to *serve* anything. They arrive as setuptools' dependencies
+# and sit in the image doing nothing but presenting attack surface. Removing
+# them eliminates the finding outright, which is strictly better than pinning
+# newer versions of packages this service never calls — and it is the concrete
+# form of the principle stated at the top of this file: every package not
+# installed cannot become a finding.
+RUN SITE=$(/app/.venv/bin/python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])") \
+    && rm -rf "$SITE"/setuptools "$SITE"/setuptools-*.dist-info \
+              "$SITE"/pkg_resources \
+              "$SITE"/wheel "$SITE"/wheel-*.dist-info \
+              "$SITE"/jaraco* \
+              "$SITE"/_distutils_hack "$SITE"/distutils-precedence.pth \
+              "$SITE"/pip "$SITE"/pip-*.dist-info \
+    && /app/.venv/bin/python -c "import fastapi, sklearn, pandas; print('runtime imports OK')"
+
 
 # --- Runtime -----------------------------------------------------------------
 FROM python:3.11-slim-bookworm AS runtime
