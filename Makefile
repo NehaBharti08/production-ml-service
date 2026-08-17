@@ -128,9 +128,17 @@ audit:  ## Phase 1 — reproduce the data audit
 train:  ## Phase 2 — train candidates and register the champion
 	uv run mlservice train run
 
+.PHONY: test-behavior-real
+test-behavior-real:  ## Behaviour suite against the REAL trained artifact
+	uv run pytest tests/behavior -m behavior -rs
+
 .PHONY: loadtest
-loadtest:  ## Phase 4 — k6 load test against a running service
-	k6 run loadtest/k6/ramp.js
+loadtest:  ## Load test a running service (Locust; see docs/LOAD_TEST_REPORT.md)
+	PYTHONUTF8=1 uv run locust -f loadtest/locustfile.py --headless 		--users 6 --spawn-rate 2 --run-time 60s 		--host http://127.0.0.1:8000 --tags ramp
+
+.PHONY: loadtest-ramp
+loadtest-ramp:  ## Find the saturation knee (sweeps concurrency)
+	@for u in 1 2 5 10 20 40; do 		echo "--- $$u users ---"; 		PYTHONUTF8=1 uv run locust -f loadtest/locustfile.py --headless 			--users $$u --spawn-rate $$u --run-time 25s 			--host http://127.0.0.1:8000 --tags ramp --only-summary 2>&1 			| grep -E "Aggregated" | head -1; 	done
 
 .PHONY: drift
 drift:  ## Phase 6 — induce drift and show detection
