@@ -148,6 +148,47 @@ def data_audit(
     typer.echo(f"        docs   -> {doc}")
 
 
+train_app = typer.Typer(help="Model training, evaluation and registration.", no_args_is_help=True)
+app.add_typer(train_app, name="train")
+
+
+@train_app.command("run")
+def train_run(
+    register_model: Annotated[
+        bool, typer.Option("--register/--no-register", help="Register the champion.")
+    ] = True,
+) -> None:
+    """Train candidates, calibrate, evaluate and register the champion."""
+    from mlservice.models.train import run_training
+
+    with request_context():
+        summary = run_training(register_model=register_model)
+
+    typer.secho(f"  OK    champion: {summary['champion']}", fg=typer.colors.GREEN, bold=True)
+    typer.echo(f"        {summary['selection_rationale']['rule']}")
+
+    for c in summary["candidates"]:
+        pr = c["pr_auc"]
+        mark = ">" if c["name"] == summary["champion"] else " "
+        typer.echo(
+            f"      {mark} {c['name']:24s} PR-AUC {pr['point']:.4f} "
+            f"[{pr['lower']:.4f}-{pr['upper']:.4f}]  "
+            f"recall {c['recall']:.3f}  prec {c['precision']:.3f}  "
+            f"lift {c['lift_over_prevalence']:.2f}x"
+        )
+
+    from mlservice.models.render_card import render_to_file
+
+    card = render_to_file()
+    typer.echo(f"        model card -> {card}")
+
+    if not summary["tracking_is_server"]:
+        typer.secho(
+            "  note  MLflow server unreachable — tracked to the local file store",
+            fg=typer.colors.YELLOW,
+        )
+
+
 @app.command("config")
 def show_config(
     as_json: Annotated[bool, typer.Option("--json", help="Emit JSON.")] = False,
