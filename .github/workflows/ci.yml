@@ -1,0 +1,165 @@
+# =============================================================================
+# CI — runs on every PR and every push to main.
+#
+# Suites are separate jobs, not one pytest invocation, so a failure names the
+# *kind* of problem in the GitHub UI without opening logs: "behaviour" failing
+# means the model stopped responding sensibly, "contract" failing means an
+# integration would break. A single job would collapse that into "tests failed".
+#
+# Jobs run in parallel where they can. quality gates the rest because a syntax
+# error makes every other result noise.
+# =============================================================================
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A new push supersedes an in-flight run on the same ref. Without this, a busy
+# PR queues runs that are already obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Never resolve configs/local.yaml in CI — it points at compose service names
+  # that do not exist here.
+  MLSERVICE_ENV: test
+  # Locust reads pyproject.toml with the platform codepage; forcing UTF-8 keeps
+  # behaviour identical across runners.
+  PYTHONUTF8: "1"
+
+jobs:
+  quality:
+    name: lint, format, types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install
+        run: uv sync --locked --all-groups
+
+      - name: Ruff lint
+        run: uv run ruff check src tests
+
+      - name: Ruff format
+        run: uv run ruff format --check src tests
+
+      - name: mypy
+        run: uv run mypy src
+
+      # The same command developers run locally, so CI cannot disagree with it.
+      - name: Environment doctor
+        run: uv run mlservice doctor
+
+  unit:
+    name: unit tests
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked --all-groups
+      - run: uv run pytest tests/unit -m unit --cov --cov-report=xml
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit
+          path: coverage.xml
+          retention-days: 7
+
+  contract:
+    name: API contract
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked --all-groups
+      # Uses an injected stub model, so this needs no trained artifact and runs
+      # on a fresh clone.
+      - run: uv run pytest tests/contract -m contract
+
+  behavior:
+    name: model behaviour
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked --all-groups
+
+      # These need the real artifact, which is gitignored. Without it they SKIP
+      # rather than fail — a fresh clone must not be blocked — so this job is
+      # currently a smoke check that the suite imports and collects.
+      #
+      # Phase 7 makes this job meaningful by publishing the champion to an HF
+      # Model repo and downloading it here. Until then the behavioural promotion
+      # gate runs locally, and that limitation is stated rather than hidden.
+      - name: Behaviour suite (skips without a trained model)
+        run: uv run pytest tests/behavior -m behavior -rs
+
+  data-quality:
+    name: data quality
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked --all-groups
+
+      # ~3 MB from UCI. Cached by checksum so a re-run does not re-download, and
+      # the download step itself verifies the archive against the committed
+      # SHA256 — a changed upstream dataset fails here rather than silently
+      # changing every downstream number.
+      - name: Cache dataset
+        uses: actions/cache@v4
+        with:
+          path: data/raw
+          key: uci-diabetes-${{ hashFiles('data/checksums.txt') }}
+
+      - name: Download and verify dataset
+        run: uv run mlservice data download
+
+      - name: Data-quality gates
+        run: uv run pytest tests/data -m data
+
+  # Gathers the parallel jobs into one required check, so branch protection has
+  # a single status to gate on instead of a list that changes with the matrix.
+  ci-passed:
+    name: CI passed
+    runs-on: ubuntu-latest
+    needs: [quality, unit, contract, behavior, data-quality]
+    if: always()
+    steps:
+      - name: Fail if any job failed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          echo "One or more CI jobs failed:"
+          echo '${{ toJSON(needs) }}'
+          exit 1
+      - run: echo "All CI jobs passed."
