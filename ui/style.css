@@ -1,0 +1,168 @@
+/* Plain CSS, no framework. The UI is one form; a design system would be
+   more code to maintain than the thing it styles.
+   Respects prefers-color-scheme so it is readable in either theme. */
+
+:root {
+  --bg: #ffffff;
+  --fg: #16181d;
+  --muted: #5b6270;
+  --border: #d8dce3;
+  --surface: #f6f7f9;
+  --accent: #1f4e8c;
+  --warn-bg: #fff4e5;
+  --warn-border: #e08600;
+  --warn-fg: #6b3d00;
+  --ok: #1a7f4b;
+  --bad: #b3261e;
+  --flagged-bg: #fdecea;
+  --flagged-fg: #8c1d18;
+  --clear-bg: #eaf5ee;
+  --clear-fg: #12603a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --fg: #e6e8ec;
+    --muted: #a0a7b4;
+    --border: #2c313a;
+    --surface: #1b1e24;
+    --accent: #7aa9e6;
+    --warn-bg: #3a2a0d;
+    --warn-border: #d9930a;
+    --warn-fg: #ffd894;
+    --ok: #56c98a;
+    --bad: #f2837c;
+    --flagged-bg: #3a1a18;
+    --flagged-fg: #ffb4ad;
+    --clear-bg: #122c1f;
+    --clear-fg: #86e0ad;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Full-bleed and high-contrast: this must not read as a dismissible notice. */
+.disclaimer {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  border-bottom: 3px solid var(--warn-border);
+  padding: 0.85rem 1.25rem;
+  font-size: 0.94rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+main {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+}
+
+h1 { font-size: 1.6rem; margin: 1.25rem 0 0.4rem; }
+h2 { font-size: 1.15rem; margin: 2rem 0 0.5rem; }
+
+.sub, .hint { color: var(--muted); margin: 0.35rem 0 0.75rem; }
+.hint { font-size: 0.9rem; }
+.small { font-size: 0.85rem; color: var(--muted); }
+
+.model-info {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.88rem;
+  margin-top: 0.75rem;
+}
+
+.ok { color: var(--ok); font-weight: 600; }
+.bad { color: var(--bad); font-weight: 600; }
+
+code {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  font-size: 0.86em;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+/* auto-fit rather than fixed columns: collapses to one column on a phone
+   without a media query. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+input, select {
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.45rem 0.55rem;
+  width: 100%;
+}
+
+input:focus-visible, select:focus-visible, button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  border-radius: 6px;
+  padding: 0.6rem 1.4rem;
+  cursor: pointer;
+}
+button:disabled { opacity: 0.6; cursor: progress; }
+
+.score {
+  border-radius: 8px;
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+.score.flagged     { background: var(--flagged-bg); color: var(--flagged-fg); }
+.score.not-flagged { background: var(--clear-bg);   color: var(--clear-fg); }
+.score .pct   { font-size: 2.4rem; font-weight: 700; line-height: 1.1; }
+.score .label { font-size: 0.95rem; }
+
+table { border-collapse: collapse; width: 100%; margin-bottom: 0.9rem; }
+th, td {
+  text-align: left;
+  padding: 0.38rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+th { color: var(--muted); font-weight: 500; width: 40%; }
+
+footer {
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+a { color: var(--accent); }

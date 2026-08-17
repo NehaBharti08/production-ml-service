@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Readmission Risk — Engineering Demo</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!--
+  The disclaimer is the first element in the document, is not dismissible, and
+  is not collapsed behind a toggle. This is a health-adjacent model and the UI
+  is the surface most likely to be screenshotted out of context.
+-->
+<div class="disclaimer" role="alert">
+  <strong>⚠ NOT FOR CLINICAL USE.</strong>
+  This is an engineering demonstration of ML operations, trained on a public
+  1999–2008 research dataset. It is not a medical device, has never been
+  clinically validated, and must never inform patient care.
+</div>
+
+<main>
+  <header>
+    <h1>Hospital Readmission Risk</h1>
+    <p class="sub">
+      Predicts 30-day readmission probability. The model is deliberately
+      simple — a calibrated logistic regression — because this project exists to
+      demonstrate <em>operating</em> a model, not building a complex one.
+    </p>
+    <div id="model-info" class="model-info">Loading model info…</div>
+  </header>
+
+  <section>
+    <h2>Score an encounter</h2>
+    <p class="hint">
+      Pre-filled with a plausible example. Change any field and submit.
+    </p>
+
+    <form id="predict-form">
+      <div class="grid">
+        <label>Age band
+          <select name="age">
+            <option>[0-10)</option><option>[10-20)</option><option>[20-30)</option>
+            <option>[30-40)</option><option>[40-50)</option><option>[50-60)</option>
+            <option>[60-70)</option><option selected>[70-80)</option>
+            <option>[80-90)</option><option>[90-100)</option>
+          </select>
+        </label>
+
+        <label>Race
+          <select name="race">
+            <option selected>Caucasian</option><option>AfricanAmerican</option>
+            <option>Hispanic</option><option>Asian</option>
+            <option>Other</option><option>Unknown</option>
+          </select>
+        </label>
+
+        <label>Gender
+          <select name="gender">
+            <option selected>Female</option><option>Male</option>
+          </select>
+        </label>
+
+        <label>Days in hospital
+          <input type="number" name="time_in_hospital" value="5" min="1" max="14">
+        </label>
+
+        <label>Prior inpatient admissions
+          <input type="number" name="number_inpatient" value="1" min="0" max="100">
+        </label>
+
+        <label>Prior emergency visits
+          <input type="number" name="number_emergency" value="0" min="0" max="100">
+        </label>
+
+        <label>Prior outpatient visits
+          <input type="number" name="number_outpatient" value="0" min="0" max="100">
+        </label>
+
+        <label>Lab procedures
+          <input type="number" name="num_lab_procedures" value="41" min="0" max="200">
+        </label>
+
+        <label>Procedures
+          <input type="number" name="num_procedures" value="0" min="0" max="20">
+        </label>
+
+        <label>Medications
+          <input type="number" name="num_medications" value="15" min="0" max="100">
+        </label>
+
+        <label>Diagnoses recorded
+          <input type="number" name="number_diagnoses" value="9" min="1" max="20">
+        </label>
+
+        <label>Primary diagnosis
+          <select name="diag_1">
+            <option selected>Circulatory</option><option>Diabetes</option>
+            <option>Respiratory</option><option>Digestive</option>
+            <option>Injury</option><option>Musculoskeletal</option>
+            <option>Genitourinary</option><option>Neoplasms</option>
+            <option>Other</option><option>Unknown</option>
+          </select>
+        </label>
+
+        <label>HbA1c result
+          <select name="A1Cresult">
+            <option selected>NotMeasured</option><option>Norm</option>
+            <option>&gt;7</option><option>&gt;8</option>
+          </select>
+        </label>
+
+        <label>Insulin
+          <select name="insulin">
+            <option>No</option><option>Steady</option>
+            <option selected>Up</option><option>Down</option>
+          </select>
+        </label>
+
+        <label>Medication changed
+          <select name="change">
+            <option selected>Ch</option><option>No</option>
+          </select>
+        </label>
+
+        <label>On diabetes medication
+          <select name="diabetesMed">
+            <option selected>Yes</option><option>No</option>
+          </select>
+        </label>
+      </div>
+
+      <button type="submit" id="submit-btn">Predict</button>
+    </form>
+  </section>
+
+  <section id="result-section" hidden>
+    <h2>Result</h2>
+    <div id="result"></div>
+  </section>
+
+  <footer>
+    <p>
+      <a href="/docs">API docs</a> ·
+      <a href="/v1/model">Model metadata</a> ·
+      <a href="/metrics">Prometheus metrics</a> ·
+      <a href="https://github.com/NehaBharti08/production-ml-service">Source</a>
+    </p>
+    <p class="small">
+      Every prediction returns a <code>prediction_id</code>. Observed outcomes can
+      be submitted against it via <code>POST /v1/outcomes</code>, which is how
+      delayed-label monitoring works.
+    </p>
+  </footer>
+</main>
+
+<script>
+// No framework and no build step. The whole UI is one form and one fetch call;
+// a bundler would add a toolchain to maintain for no benefit here.
+
+const DEFAULTS = {
+  admission_type_id: 1,
+  discharge_disposition_id: 1,
+  admission_source_id: 7,
+  medical_specialty: "InternalMedicine",
+  diag_2: "Diabetes",
+  diag_3: "Circulatory",
+  max_glu_serum: "NotMeasured",
+  metformin: "No",
+};
+
+async function loadModelInfo() {
+  const el = document.getElementById("model-info");
+  try {
+    const r = await fetch("/v1/model");
+    const d = await r.json();
+    if (!d.loaded) {
+      el.innerHTML = `<span class="bad">No model loaded</span> — ${d.error ?? "unknown reason"}`;
+      return;
+    }
+    // model_source is surfaced deliberately: "local_fallback" means MLflow is
+    // unreachable and the service is serving the baked-in artifact.
+    el.innerHTML =
+      `<span class="ok">Model loaded</span> · version <code>${d.version}</code>` +
+      ` · source <code>${d.source}</code>` +
+      ` · threshold <code>${Number(d.decision_threshold).toFixed(4)}</code>` +
+      ` · schema <code>${d.feature_schema_hash}</code>`;
+  } catch (e) {
+    el.innerHTML = `<span class="bad">Could not reach the service</span>`;
+  }
+}
+
+document.getElementById("predict-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const btn = document.getElementById("submit-btn");
+  const section = document.getElementById("result-section");
+  const out = document.getElementById("result");
+
+  btn.disabled = true;
+  btn.textContent = "Predicting…";
+  section.hidden = false;
+  out.innerHTML = "<p>Working…</p>";
+
+  const form = new FormData(event.target);
+  const features = { ...DEFAULTS };
+  for (const [k, v] of form.entries()) {
+    const el = event.target.elements[k];
+    features[k] = el && el.type === "number" ? Number(v) : v;
+  }
+
+  try {
+    const r = await fetch("/v1/predict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ features, client_id: "web-ui" }),
+    });
+    const d = await r.json();
+
+    if (!r.ok) {
+      // Validation errors name the field and the constraint; show them as-is
+      // rather than a generic failure message.
+      const rows = (d.errors ?? []).map(
+        (e) => `<li><code>${e.field}</code> — ${e.message}</li>`
+      ).join("");
+      out.innerHTML =
+        `<p class="bad"><strong>${d.title ?? "Error"}</strong></p>` +
+        `<p>${d.detail ?? ""}</p>` +
+        (rows ? `<ul>${rows}</ul>` : "") +
+        `<p class="small">request_id <code>${d.request_id ?? "?"}</code></p>`;
+      return;
+    }
+
+    const pct = (d.readmission_probability * 100).toFixed(1);
+    out.innerHTML = `
+      <div class="score ${d.flagged ? "flagged" : "not-flagged"}">
+        <div class="pct">${pct}%</div>
+        <div class="label">${d.flagged ? "Above decision threshold" : "Below decision threshold"}</div>
+      </div>
+      <table>
+        <tr><th>Probability</th><td>${d.readmission_probability.toFixed(6)}</td></tr>
+        <tr><th>Threshold</th><td>${d.decision_threshold.toFixed(6)}</td></tr>
+        <tr><th>Model version</th><td><code>${d.model.version}</code></td></tr>
+        <tr><th>Model source</th><td><code>${d.model.source}</code></td></tr>
+        <tr><th>Latency</th><td>${d.latency_ms.toFixed(2)} ms</td></tr>
+        <tr><th>Prediction ID</th><td><code>${d.prediction_id}</code></td></tr>
+      </table>
+      <p class="small">
+        <strong>Interpretation, honestly:</strong> at this threshold the model
+        flags roughly a third of patients and about 89% of those flags do not
+        result in a 30-day readmission. A "flagged" result is not a prediction
+        that this patient will be readmitted.
+      </p>
+      <p class="small">${d.disclaimer}</p>
+    `;
+  } catch (e) {
+    out.innerHTML = `<p class="bad">Request failed: ${e.message}</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Predict";
+  }
+});
+
+loadModelInfo();
+</script>
+</body>
+</html>
