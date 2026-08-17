@@ -66,6 +66,11 @@ reports/*.json
 # prose against the numbers the code actually produced.
 !reports/data_audit.json
 
+# Same exception, same reasoning: aggregate metrics only (30 KB, no
+# row-level records). It is the provenance for docs/MODEL_CARD.md, so
+# committing it lets a reviewer check the card against the run.
+!reports/training_summary.json
+
 # --- Python ------------------------------------------------------------------
 .venv/
 venv/
