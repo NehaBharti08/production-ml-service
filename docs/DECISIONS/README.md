@@ -16,6 +16,7 @@ precede Phase 1 ones.
 | [0005](0005-model-selection.md) | Model selection — simplest not-significantly-worse | 2 | Accepted |
 | [0006](0006-prediction-log-schema.md) | Prediction log schema and durability | 3 | Accepted |
 | 0007 | Drift thresholds by empirical null calibration | 6 | Pending |
+| 0008 | Retraining triggers and promotion gates | 7 | Pending |
 
 ## Why these exist
 
