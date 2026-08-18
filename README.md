@@ -75,16 +75,16 @@ tree reaches ~100%, which is precisely why those datasets prove nothing.
 
 ## Status
 
-🚧 **Phase 1 of 8 complete.** This README fills in as the phases land.
+🚧 **Phase 5 of 8 complete.** This README fills in as the phases land.
 
 | Phase | Scope | State |
 |:--|:--|:--|
 | 0 | Foundation — config, logging, tooling | ✅ done |
 | 1 | Data audit and honest baseline | ✅ done |
-| 2 | Model, calibration, subgroups, model card | ⬜ |
-| 3 | FastAPI serving + prediction log | ⬜ |
-| 4 | Tests, behaviour suite, CI, load test | ⬜ |
-| 5 | Prometheus + Grafana observability | ⬜ |
+| 2 | Model, calibration, subgroups, model card | ✅ done |
+| 3 | FastAPI serving + prediction log | ✅ done |
+| 4 | Tests, behaviour suite, CI, load test | ✅ done |
+| 5 | Prometheus + Grafana observability | ✅ done |
 | 6 | Drift detection and monitoring | ⬜ |
 | 7 | Retraining, promotion gates, rollback | ⬜ |
 | 8 | Ship — runbook, live endpoint, docs | ⬜ |
@@ -113,6 +113,7 @@ Docker, `kind` and `kubectl` are needed from Phase 3 onward — see
 | [docs/DATA_AUDIT.md](docs/DATA_AUDIT.md) | Leakage hunt, missingness, imbalance, split verification |
 | [docs/MODEL_CARD.md](docs/MODEL_CARD.md) | Intended use, **out-of-scope use**, metrics, calibration, subgroups |
 | [docs/MONITORING.md](docs/MONITORING.md) | Every metric and threshold, with its derivation |
+| [docs/LOAD_TEST_REPORT.md](docs/LOAD_TEST_REPORT.md) | Measured latency profile and where the service breaks |
 | [docs/RETRAINING_POLICY.md](docs/RETRAINING_POLICY.md) | Triggers, promotion gates, rollback |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | Incident response — what to do when it breaks |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System diagram and component responsibilities |

@@ -148,12 +148,57 @@ jobs:
       - name: Data-quality gates
         run: uv run pytest tests/data -m data
 
+  observability:
+    name: alert rules and dashboards
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked --all-groups
+
+      # promtool is the only thing that actually parses PromQL. Without it a
+      # typo in an expression ships silently and the alert simply never fires —
+      # the worst failure mode for monitoring, because it looks identical to
+      # "nothing is wrong". It cannot run on the Windows dev machine, so this
+      # job is where alert rules get genuinely verified.
+      - name: Install promtool
+        run: |
+          VERSION=3.1.0
+          curl -sSL "https://github.com/prometheus/prometheus/releases/download/v${VERSION}/prometheus-${VERSION}.linux-amd64.tar.gz"             | tar xz --strip-components=1 -C /usr/local/bin "prometheus-${VERSION}.linux-amd64/promtool"
+          promtool --version
+
+      - name: Validate Prometheus config
+        run: promtool check config deploy/prometheus/prometheus.yml
+
+      - name: Validate alert rules (parses every PromQL expression)
+        run: promtool check rules deploy/prometheus/rules/alerts.yml
+
+      # Dashboards are generated from configs/thresholds.yaml. Regenerating and
+      # diffing proves the committed JSON matches the current SLOs — otherwise a
+      # threshold change silently leaves the dashboards showing the old bands,
+      # which is exactly the drift the generator exists to prevent.
+      - name: Dashboards are in sync with thresholds.yaml
+        run: |
+          uv run python scripts/build_dashboards.py
+          if ! git diff --exit-code -- deploy/grafana/dashboards/; then
+            echo
+            echo "Dashboards are stale. Run: uv run python scripts/build_dashboards.py"
+            exit 1
+          fi
+
+      - name: Dashboard JSON is well formed
+        run: uv run pytest tests/unit/test_observability.py -m unit
+
   # Gathers the parallel jobs into one required check, so branch protection has
   # a single status to gate on instead of a list that changes with the matrix.
   ci-passed:
     name: CI passed
     runs-on: ubuntu-latest
-    needs: [quality, unit, contract, behavior, data-quality]
+    needs: [quality, unit, contract, behavior, data-quality, observability]
     if: always()
     steps:
       - name: Fail if any job failed

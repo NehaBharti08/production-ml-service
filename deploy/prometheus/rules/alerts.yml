@@ -1,0 +1,368 @@
+# =============================================================================
+# Alert rules.
+#
+# EVERY threshold here traces to configs/thresholds.yaml, which carries the
+# provenance tag and the derivation. Nothing in this file is a round number
+# somebody liked the look of — that is the single most common tell that
+# monitoring was copied rather than reasoned about.
+#
+# Two design rules applied throughout:
+#
+#   1. Alert on symptoms, not causes. "p99 latency exceeds the SLO" is
+#      actionable; "CPU is at 80%" is not, because 80% CPU is fine if latency
+#      is fine and irrelevant if it is not.
+#
+#   2. Every alert must be actionable by the person woken up. Each carries a
+#      runbook_url pointing at the section of docs/RUNBOOK.md that says what to
+#      DO. An alert without a response is a notification, and notifications
+#      train people to ignore pages.
+#
+# Severity has exactly two levels, deliberately:
+#   page   — a human must act now; the error budget is burning fast enough that
+#            waiting until morning means breaching it
+#   ticket — act during working hours; something is degrading but the budget
+#            survives the night
+# A third level ("warning") always becomes a level nobody reads.
+# =============================================================================
+
+groups:
+  # ===========================================================================
+  # Availability — multi-window, multi-burn-rate
+  #
+  # From the Google SRE Workbook, Ch.5. The factors (14.4x, 6x) are not
+  # invented: they are chosen so that a page means "you will exhaust the 30-day
+  # error budget before the window closes".
+  #
+  # The SHORT window in each pair is what stops a resolved incident from paging
+  # for another hour. Without it, a burst that ends at minute 5 keeps the 1h
+  # rate elevated for 55 more minutes and the alert stays firing long after
+  # there is anything to do.
+  # ===========================================================================
+  - name: availability_slo
+    interval: 30s
+    rules:
+      - alert: ErrorBudgetBurningFast
+        # 14.4x burn over 1h consumes 2% of a 30-day budget in one hour.
+        # thresholds.yaml: slo.burn_rate.page (STANDARD, Google SRE Workbook)
+        expr: |
+          (
+            sum(rate(http_requests_total{status="5xx"}[1h]))
+              / sum(rate(http_requests_total[1h]))
+            > (14.4 * 0.005)
+          )
+          and
+          (
+            sum(rate(http_requests_total{status="5xx"}[5m]))
+              / sum(rate(http_requests_total[5m]))
+            > (14.4 * 0.005)
+          )
+        for: 2m
+        labels:
+          severity: page
+          slo: availability
+        annotations:
+          summary: "Error budget burning at 14.4x — page"
+          description: >-
+            5xx ratio is {{ $value | humanizePercentage }} over 1h and still
+            elevated over 5m. At this rate the 30-day error budget (216 minutes)
+            is exhausted in about 2 days.
+          runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#error-rate-spike"
+
+      - alert: ErrorBudgetBurningSlowly
+        # 6x burn over 6h consumes 5% of the budget in six hours. Slow enough to
+        # handle in working hours, fast enough that ignoring it for a week
+        # breaches the SLO.
+        expr: |
+          (
+            sum(rate(http_requests_total{status="5xx"}[6h]))
+              / sum(rate(http_requests_total[6h]))
+            > (6 * 0.005)
+          )
+          and
+          (
+            sum(rate(http_requests_total{status="5xx"}[30m]))
+              / sum(rate(http_requests_total[30m]))
+            > (6 * 0.005)
+          )
+        for: 15m
+        labels:
+          severity: ticket
+          slo: availability
+        annotations:
+          summary: "Error budget burning at 6x — ticket"
+          description: >-
+            5xx ratio is {{ $value | humanizePercentage }} over 6h. Not urgent
+            tonight, but it will breach the SLO if left for the week.
+          runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#error-rate-spike"
+
+  # ===========================================================================
+  # Latency
+  #
+  # Thresholds from thresholds.yaml slo.latency, which is tagged MEASURED with
+  # its derivation rule (slo = 2 x measured p99) fixed BEFORE measurement.
+  #
+  # NOTE the caveat carried in that file: the load generator was co-located with
+  # the service, so these are an upper bound and remeasure_required is true.
+  # The SLO is deliberately loose for exactly that reason — a tight SLO derived
+  # from a contended measurement pages on healthy behaviour, which is worse than
+  # no SLO at all.
+  # ===========================================================================
+  - name: latency_slo
+    interval: 30s
+    rules:
+      - alert: LatencyP99AboveSLO
+        # slo_p99_ms = 700 (2 x measured p99 of 350ms)
+        # `for: 5m` survives a GC pause and scrape jitter — a single slow scrape
+        # is not an incident.
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le, endpoint) (rate(http_request_duration_seconds_bucket[5m]))
+          ) > 0.700
+        for: 5m
+        labels:
+          severity: page
+          slo: latency
+        annotations:
+          summary: "p99 latency above SLO on {{ $labels.endpoint }}"
+          description: >-
+            p99 is {{ $value | humanizeDuration }} against a 700ms SLO, sustained
+            5 minutes. Check whether the model or the layer around it slowed:
+            model_inference_duration_seconds isolates the model.
+          runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#latency-spike"
+
+      - alert: LatencyP99Degrading
+        # ticket_p99_ms = 525 (1.5 x measured p99), sustained 30m.
+        # Catches a creeping regression before it becomes a page.
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le, endpoint) (rate(http_request_duration_seconds_bucket[30m]))
+          ) > 0.525
+        for: 30m
+        labels:
+          severity: ticket
+          slo: latency
+        annotations:
+          summary: "p99 latency creeping up on {{ $labels.endpoint }}"
+          description: >-
+            p99 is {{ $value | humanizeDuration }}, above the 525ms ticket
+            threshold for 30 minutes but below the 700ms SLO. Something is
+            degrading gradually.
+          runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#latency-spike"
+
+      - alert: ApproachingSaturation
+        # The load test measured the knee at ~52 req/s: past it, throughput
+        # INVERTS and latency rises 3.8x. 80% of the knee (~42 req/s) gives
+        # warning before the service enters that regime.
+        # thresholds.yaml: slo.latency.measured_knee_rps (MEASURED)
+        expr: sum(rate(http_requests_total[5m])) > 42
+        for: 10m
+        labels:
+          severity: ticket
+          slo: capacity
+        annotations:
+          summary: "Request rate approaching measured saturation"
+          description: >-
+            {{ $value | printf "%.1f" }} req/s, against a measured knee of
+            ~52 req/s where throughput inverts. Scale out before crossing it —
+            past the knee, adding load makes the service slower AND less
+            productive.
+          runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#latency-spike"
+
+  # ===========================================================================
+  # Model serving
+  # ===========================================================================
+  - name: model_health
+    interval: 30s
+    rules:
+      - alert: ModelNotLoaded
+        # model_load_status is the gauge readiness reports on, so this is the
+        # same condition Kubernetes uses to drain traffic. Paging because an
+        # instance serving 503 to every request is an outage for its share of
+        # traffic, even if other replicas are healthy.
+        expr: model_load_status == 0
+        for: 2m
+        labels:
+          severity: page
+          slo: availability
+        annotations:
+          summary: "No model loaded — instance is serving 503"
+          description: >-
+            The service is up but has no usable model, so readiness is failing
+            and every prediction returns 503. Check /v1/model for the reason.
+          runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#readiness-flapping"
+
+      - alert: ServingFromLocalFallback
+        # NOT a page: this is the fallback working exactly as designed — the API
+        # deliberately does not depend on MLflow being up. But it means the
+        # registry is unreachable, so a promotion or rollback would not take
+        # effect, which someone should know about during working hours.
+        expr: model_serving_info{source="local_fallback"} == 1
+        for: 15m
+        labels:
+          severity: ticket
+          slo: deployability
+        annotations:
+          summary: "Serving the baked-in fallback, not the registry"
+          description: >-
+            The registry has been unreachable for 15 minutes and the service is
+            serving its local artifact. Predictions are fine; PROMOTION AND
+            ROLLBACK ARE NOT — an alias flip would have no effect.
+          runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#model-degradation"
+
+      - alert: PredictionDistributionShifted
+        # The score distribution moves before accuracy does, and long before
+        # labels mature at 30 days. This is the earliest available signal that
+        # the input population changed.
+        #
+        # Compares the 6h mean against the 7d mean rather than a fixed constant,
+        # because the "normal" mean is a property of the traffic, not a number
+        # that can be hardcoded. 25% relative change matches
+        # thresholds.yaml drift.alert.prediction_drift.alert_rate_relative_change.
+        expr: |
+          abs(
+            (
+              sum(rate(model_predicted_proba_sum[6h]))
+                / sum(rate(model_predicted_proba_count[6h]))
+            )
+            -
+            (
+              sum(rate(model_predicted_proba_sum[7d]))
+                / sum(rate(model_predicted_proba_count[7d]))
+            )
+          )
+          /
+          (
+            sum(rate(model_predicted_proba_sum[7d]))
+              / sum(rate(model_predicted_proba_count[7d]))
+          )
+          > 0.25
+        for: 1h
+        labels:
+          severity: ticket
+          slo: model_quality
+        annotations:
+          summary: "Mean predicted probability shifted more than 25%"
+          description: >-
+            The 6h mean score has moved {{ $value | humanizePercentage }} from
+            the 7d baseline. The input population has probably changed. Confirm
+            against the Evidently drift report before concluding the model
+            degraded — the score moving is a symptom, not a diagnosis.
+          runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#drift-alert-fired"
+
+  # ===========================================================================
+  # Data quality and the monitoring pipeline itself
+  #
+  # The most valuable group here. Silent monitoring failure is the way
+  # monitoring usually dies: nothing alerts, because nothing is being measured.
+  # ===========================================================================
+  - name: data_quality
+    interval: 1m
+    rules:
+      - alert: ValidationErrorsSpikeOnOneField
+        # Labelled BY FIELD deliberately. A spike concentrated on one field is
+        # an upstream schema change; the same volume spread across many fields
+        # is a caller sending junk. Those need different responses, and an
+        # unlabelled counter cannot tell them apart.
+        expr: |
+          sum by (field) (rate(validation_errors_total[15m]))
+            > 3 * sum by (field) (rate(validation_errors_total[7d]))
+          and
+          sum by (field) (rate(validation_errors_total[15m])) > 0.1
+        for: 15m
+        labels:
+          severity: ticket
+          slo: data_quality
+        annotations:
+          summary: "Validation failures spiked on {{ $labels.field }}"
+          description: >-
+            {{ $labels.field }} is failing validation at 3x its weekly rate.
+            Concentrated on one field, this usually means an upstream producer
+            changed its schema.
+          runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#drift-alert-fired"
+
+      - alert: PredictionLogWriteFailures
+        # A failed log write does not fail the request — by design, because
+        # losing a log line is a monitoring gap while failing the request is an
+        # outage. But it means Phases 6 and 7 are being starved of input, so the
+        # gap must be visible.
+        expr: rate(prediction_log_writes_total{result="failed"}[15m]) > 0
+        for: 15m
+        labels:
+          severity: ticket
+          slo: observability
+        annotations:
+          summary: "Prediction log writes are failing"
+          description: >-
+            Predictions are being served but not recorded. Drift detection and
+            retraining are blind for this period. Usually a full or read-only
+            volume.
+          runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#label-pipeline-stopped"
+
+      - alert: NoOutcomesRecorded
+        # The watchdog for the most common silent failure. Labels arriving is
+        # what makes delayed-label monitoring possible at all; if they stop,
+        # every performance metric quietly freezes at its last value and looks
+        # healthy.
+        #
+        # 888h = 30d maturation + 7d slack, from thresholds.yaml
+        # drift.alert.label_pipeline_stalled.max_hours_without_matured_label.
+        # Expressed as 5d here because the DEMO replays on a compressed clock;
+        # a real deployment would use the full window.
+        # `increase() == 0` alone is the whole check. An earlier draft prefixed
+        # it with `(time() - max(...) * 0) > 0`, which multiplies by zero and so
+        # reduces to `time() > 0` — always true, contributing nothing. Caught by
+        # reading the expression back rather than by any tool.
+        expr: increase(outcomes_recorded_total[5d]) == 0
+        for: 1h
+        labels:
+          severity: ticket
+          slo: observability
+        annotations:
+          summary: "No outcomes recorded in 5 days — label pipeline may be dead"
+          description: >-
+            Without matured labels, rolling PR-AUC freezes at its last value and
+            the performance-based retraining trigger can never fire. The metrics
+            will look healthy precisely because nothing is updating them.
+          runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#label-pipeline-stopped"
+
+  # ===========================================================================
+  # Meta: is monitoring itself working?
+  # ===========================================================================
+  - name: monitoring_health
+    interval: 30s
+    rules:
+      - alert: ServiceDown
+        # `up` comes from Prometheus itself, not the application, so it still
+        # fires when the app is too broken to expose metrics — which is exactly
+        # when every application-level alert goes silent.
+        expr: up{job="mlservice-api"} == 0
+        for: 2m
+        labels:
+          severity: page
+          slo: availability
+        annotations:
+          summary: "Cannot scrape the API — it may be down"
+          description: >-
+            Prometheus has not scraped {{ $labels.instance }} for 2 minutes.
+            Every other alert in this file is blind while this is firing.
+          runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#error-rate-spike"
+
+      - alert: NoTrafficReceived
+        # Absence of traffic is not automatically a problem on a demo service,
+        # so this is a ticket. But zero requests for an hour on something that
+        # normally serves traffic usually means a broken ingress or a client
+        # that stopped calling — and no other alert fires, because every rate()
+        # is zero.
+        expr: sum(rate(http_requests_total{endpoint!~"/health.*|/metrics"}[1h])) == 0
+        for: 1h
+        labels:
+          severity: ticket
+          slo: availability
+        annotations:
+          summary: "No prediction traffic for an hour"
+          description: >-
+            Probes are being served but no real requests are arriving. Nothing
+            else alerts in this state, because every rate() is legitimately zero.
+          runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#error-rate-spike"
