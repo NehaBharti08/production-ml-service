@@ -2,9 +2,9 @@
 # API image — multi-stage.
 #
 # Two properties this build is optimised for, in order:
-#   1. A small, reviewable attack surface. Phase 4 gates CI on a Trivy scan
-#      failing at HIGH/CRITICAL, and every package not installed is a package
-#      that cannot be a finding.
+#   1. A small, reviewable attack surface. CI gates on a Trivy scan failing at
+#      HIGH/CRITICAL, and every package not installed is a package that cannot
+#      be a finding.
 #   2. Reproducibility. uv installs from the committed uv.lock, so the image
 #      resolves to identical versions on every build.
 #
@@ -32,6 +32,27 @@ RUN uv sync --locked --no-install-project --no-dev --group serve
 COPY src/ ./src/
 RUN uv sync --locked --no-dev --group serve
 
+# Strip build tooling from the venv.
+#
+# Not cosmetic. The Trivy gate caught two real HIGH CVEs on the first run that
+# ever built this image, and neither package is used to serve anything:
+#
+#   jaraco.context 5.3.0   CVE-2026-23949  path traversal via malicious tar
+#   wheel          0.45.1  CVE-2026-24049  privilege escalation via bad wheel
+#
+# Removing them eliminates the finding outright, which is better than pinning
+# newer versions of packages this service never calls. It is the concrete form
+# of the principle at the top of this file.
+RUN SITE=$(/app/.venv/bin/python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])") \
+    && rm -rf \
+        "$SITE"/setuptools "$SITE"/setuptools-*.dist-info \
+        "$SITE"/pkg_resources \
+        "$SITE"/wheel "$SITE"/wheel-*.dist-info \
+        "$SITE"/jaraco* \
+        "$SITE"/_distutils_hack "$SITE"/distutils-precedence.pth \
+        "$SITE"/pip "$SITE"/pip-*.dist-info \
+    && /app/.venv/bin/python -c "import fastapi, sklearn, pandas; print('venv imports OK')"
+
 
 # --- Runtime -----------------------------------------------------------------
 FROM python:3.11-slim-bookworm AS runtime
@@ -40,6 +61,25 @@ FROM python:3.11-slim-bookworm AS runtime
 # Kubernetes manifests in Phase 7 set runAsNonRoot to enforce this at admission.
 RUN groupadd --gid 1000 app \
     && useradd --uid 1000 --gid app --shell /bin/bash --create-home app
+
+# Strip build tooling from the BASE IMAGE's Python too.
+#
+# The first attempt purged only /app/.venv and the scan still failed. The CVEs
+# were in /usr/local/lib/python3.11/site-packages: python:3.11-slim ships its
+# own setuptools (which vendors jaraco.context) and wheel. The venv has its own
+# site-packages, so the base copies were pure attack surface — present, scanned,
+# and never imported.
+#
+# The stdlib is untouched; only these packages are removed. Done before the venv
+# is copied so a failure here cannot be mistaken for a venv problem.
+RUN SITE=$(python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])") \
+    && rm -rf \
+        "$SITE"/setuptools "$SITE"/setuptools-*.dist-info \
+        "$SITE"/pkg_resources \
+        "$SITE"/wheel "$SITE"/wheel-*.dist-info \
+        "$SITE"/jaraco* \
+        "$SITE"/_distutils_hack "$SITE"/distutils-precedence.pth \
+        "$SITE"/pip "$SITE"/pip-*.dist-info
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
@@ -50,9 +90,14 @@ ENV PATH="/app/.venv/bin:$PATH" \
 WORKDIR /app
 
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
-COPY --chown=app:app src/    ./src/
+COPY --chown=app:app src/     ./src/
 COPY --chown=app:app configs/ ./configs/
 COPY --chown=app:app ui/      ./ui/
+
+# Prove the purge did not break the runtime. Without this the image would build
+# fine and fail on the first request instead.
+RUN /app/.venv/bin/python -c \
+    "import fastapi, uvicorn, sklearn, pandas, mlservice; print('runtime imports OK')"
 
 # Written to at runtime: the prediction log lands here.
 RUN mkdir -p /app/data/monitoring /app/logs && chown -R app:app /app/data /app/logs
@@ -68,7 +113,8 @@ HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
 
 # exec form, so uvicorn is PID 1 and receives SIGTERM directly. Wrapped in a
 # shell it would not, in-flight requests would be dropped, and the graceful
-# shutdown implemented in Phase 3 would silently never run.
+# shutdown would silently never run. Verified in CI by docker stop asserting the
+# service_stopping log line appears.
 CMD ["uvicorn", "mlservice.api.main:app", \
      "--host", "0.0.0.0", \
      "--port", "8000", \

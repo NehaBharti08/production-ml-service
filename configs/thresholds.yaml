@@ -51,24 +51,55 @@ slo:
       factor: 6.0       # burns 5% of a 30d budget in 6h
 
   latency:
-    provenance: PLACEHOLDER
-    replaced_in_phase: 4
-    # Phase 4 measures p50/p95/p99 across the k6 ramp, finds the knee, and
-    # rewrites this block. The RULE is fixed now so the numbers cannot be
-    # reverse-engineered to whatever the service happens to do:
+    provenance: MEASURED
+    source: "docs/LOAD_TEST_REPORT.md — Locust, 2026-08-18, host process, i5-12450H"
+    measured_in_phase: 4
+
+    # Derivation rule, fixed in configs BEFORE any measurement was taken so the
+    # numbers could not be reverse-engineered to whatever the service happened
+    # to do:
     #
-    #     slo_p99_ms   = ceil(measured_p99_at_target_rps * 2)
+    #     slo_p99_ms   = ceil(measured_p99 @ target_rps * 2)
     #     page_ms      = slo_p99_ms, breached for 5 consecutive minutes
-    #     ticket_ms    = ceil(measured_p99_at_target_rps * 1.5), sustained 30m
+    #     ticket_ms    = ceil(measured_p99 @ target_rps * 1.5), sustained 30m
     #
-    # The 2x factor leaves headroom for cold caches and scrape jitter; the 5m
-    # window outlives a GC pause. A one-scrape spike is not an incident.
+    # That discipline earned its keep here: the plan estimated p50 of 4-8 ms and
+    # the measured p50 is ~130 ms, because the sklearn feature transform costs
+    # ~64 ms per CALL while the model itself costs ~1 ms.
     derivation_rule: "slo = 2 x measured_p99 @ target_rps; page = slo for 5m; ticket = 1.5 x measured_p99 for 30m"
-    target_rps: 50
-    slo_p99_ms: null
-    slo_p95_ms: null
-    page_p99_ms: null
-    ticket_p99_ms: null
+
+    # 25 rps, not 50. The ramp sweep found the saturation knee between 20 and 40
+    # concurrent users: throughput INVERTED there (52.3 -> 47.6 req/s) while
+    # latency went from 139 ms to 522 ms. A target at the knee has no headroom,
+    # so this sits at roughly half of measured capacity.
+    target_rps: 25
+    measured_knee_rps: 52
+
+    measured_p50_ms: 130
+    measured_p95_ms: 260
+    measured_p99_ms: 350
+
+    slo_p99_ms: 700     # 2 x 350
+    slo_p95_ms: 520     # 2 x 260
+    page_p99_ms: 700
+    ticket_p99_ms: 525  # 1.5 x 350
+
+    # IMPORTANT CAVEAT, recorded so nobody treats these as precise.
+    #
+    # The load generator ran on the same 12-thread machine as the service, so
+    # every measurement includes contention between the two. Repeat runs varied
+    # by 2-3x depending on machine state (median 47 ms at 5 users in one sweep,
+    # 130 ms at 6 users in another). The RELATIVE shape — where the knee is, and
+    # that throughput inverts past it — is trustworthy because the sweep ran
+    # back to back under comparable conditions. The ABSOLUTE numbers are an
+    # upper bound, not a characterisation.
+    #
+    # Re-measure with the service in a container and the generator off-box
+    # before treating these as a real SLO. Until then they are deliberately
+    # loose: a too-tight SLO derived from a contended measurement would page on
+    # healthy behaviour, which is worse than no SLO.
+    measurement_caveat: "load generator co-located with the service; 2-3x run-to-run variance; re-measure off-box"
+    remeasure_required: true
 
   error_rate:
     provenance: DERIVED

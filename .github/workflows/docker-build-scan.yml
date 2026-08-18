@@ -1,0 +1,150 @@
+# =============================================================================
+# Build the serving image and scan it for vulnerabilities.
+#
+# Separate from ci.yml because it is slower and has different failure semantics:
+# a CVE in a base image is not a code defect, and mixing the two would make a
+# red CI badge ambiguous.
+#
+# The scan gates on HIGH and CRITICAL. This is the check the "only the serve
+# dependency group is installed" decision in Dockerfile.api exists to satisfy —
+# every package not installed is a package that cannot become a finding.
+# =============================================================================
+
+name: Docker build and scan
+
+on:
+  pull_request:
+    paths:
+      - "deploy/docker/**"
+      - "src/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/docker-build-scan.yml"
+  push:
+    branches: [main]
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write   # required to upload SARIF to the Security tab
+
+jobs:
+  build-and-scan:
+    name: build, scan, smoke-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: docker/setup-buildx-action@v4.2.0
+
+      # Loaded into the local daemon rather than pushed: the image has to be
+      # scanned and smoke-tested before it is worth publishing anywhere.
+      - name: Build image
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.api
+          tags: mlservice-api:ci
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ---------------------------------------------------------------------
+      # Smoke test. The container has to actually start before a vulnerability
+      # scan of it means anything.
+      #
+      # This is also the first place graceful shutdown can be verified: Windows
+      # has no SIGTERM semantics, so the drain path could not be tested during
+      # development.
+      # ---------------------------------------------------------------------
+      - name: Start container
+        run: |
+          docker run -d --name api -p 8000:8000 \
+            -e MLSERVICE_ENV=local \
+            -e MLSERVICE_MLFLOW__TRACKING_URI= \
+            mlservice-api:ci
+
+      - name: Wait for liveness
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fs http://localhost:8000/health/live > /dev/null; then
+              echo "live after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "container never became live"; docker logs api; exit 1
+
+      - name: Readiness reports honestly without a model
+        run: |
+          # No artifact is baked into the CI image, so readiness MUST report 503.
+          # A 200 here would mean readiness is not actually checking the model,
+          # which would break the Phase 7 rollback demo.
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health/ready)
+          echo "readiness returned $code"
+          if [ "$code" != "503" ]; then
+            echo "expected 503 without a model, got $code"
+            docker logs api
+            exit 1
+          fi
+
+      - name: Prediction returns 503, not 500, when unready
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            http://localhost:8000/v1/predict \
+            -H 'Content-Type: application/json' -d '{"features":{}}')
+          # 422 (validation) or 503 (no model) are both correct; 500 is not.
+          if [ "$code" = "500" ]; then
+            echo "unready service returned 500; it must return 503"
+            docker logs api; exit 1
+          fi
+          echo "returned $code"
+
+      - name: Graceful shutdown drains rather than dropping
+        run: |
+          # Could not be verified during development: Windows Stop-Process is a
+          # hard kill with no SIGTERM. This is the first real test of the
+          # exec-form CMD (uvicorn as PID 1) and --timeout-graceful-shutdown.
+          docker stop --timeout 30 api
+          docker logs api 2>&1 | tail -20
+          if docker logs api 2>&1 | grep -q "service_stopping"; then
+            echo "clean shutdown confirmed"
+          else
+            echo "no service_stopping log line — SIGTERM did not reach uvicorn"
+            exit 1
+          fi
+
+      - name: Remove container
+        if: always()
+        run: docker rm -f api || true
+
+      # ---------------------------------------------------------------------
+      # Vulnerability scan
+      # ---------------------------------------------------------------------
+      - name: Trivy scan (gate on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: mlservice-api:ci
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true   # an unfixable base-image CVE is not actionable here
+          exit-code: "1"
+
+      - name: Trivy SARIF for the Security tab
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: mlservice-api:ci
+          format: sarif
+          output: trivy.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4.37.7
+        with:
+          sarif_file: trivy.sarif
+        continue-on-error: true   # forks cannot write security events
