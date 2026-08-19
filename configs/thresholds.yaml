@@ -150,15 +150,67 @@ drift:
   # and a frozen feature setting a hair-trigger.
   # -------------------------------------------------------------------------
   per_feature:
-    provenance: PLACEHOLDER
-    replaced_in_phase: 6
+    provenance: MEASURED
+    source: "empirical null over 20 training windows; see docs/MONITORING.md"
+    measured_in_phase: 6
     generated_by: "mlservice.monitoring.null_calibration"
     calibration:
       n_null_windows: 20
+      window_rows: 1994
       percentile: 99
-      floor: 0.10                   # STANDARD: credit-risk "no meaningful shift"
-      ceiling: 0.25                 # STANDARD: above the "significant" convention
-    thresholds: {}                  # feature_name -> psi threshold, written by the generator
+      floor: 0.1
+      ceiling: 0.25
+      n_clamped_to_floor: 37
+      n_clamped_to_ceiling: 2
+      n_unclamped: 4
+
+    # Each value is that feature's OWN 99th-percentile PSI between
+    # adjacent stable training windows, clamped to the credit-risk
+    # convention. Regenerate with: uv run mlservice monitor calibrate
+    thresholds:
+      A1Cresult: 0.1
+      acarbose: 0.1
+      acetohexamide: 0.1
+      admission_source_id: 0.25
+      admission_type_id: 0.151419
+      age: 0.1
+      change: 0.1
+      chlorpropamide: 0.1
+      diabetesMed: 0.1
+      diag_1: 0.1
+      diag_2: 0.1
+      diag_3: 0.1
+      discharge_disposition_id: 0.25
+      gender: 0.1
+      glimepiride: 0.1
+      glimepiride-pioglitazone: 0.1
+      glipizide: 0.1
+      glipizide-metformin: 0.1
+      glyburide: 0.1
+      glyburide-metformin: 0.1
+      insulin: 0.1
+      max_glu_serum: 0.1
+      medical_specialty: 0.24231
+      metformin: 0.1
+      metformin-pioglitazone: 0.1
+      metformin-rosiglitazone: 0.1
+      miglitol: 0.1
+      nateglinide: 0.1
+      num_lab_procedures: 0.168198
+      num_medications: 0.1
+      num_procedures: 0.1
+      number_diagnoses: 0.220989
+      number_emergency: 0.1
+      number_inpatient: 0.1
+      number_outpatient: 0.1
+      pioglitazone: 0.1
+      race: 0.1
+      repaglinide: 0.1
+      rosiglitazone: 0.1
+      time_in_hospital: 0.1
+      tolazamide: 0.1
+      tolbutamide: 0.1
+      troglitazone: 0.1
 
   # -------------------------------------------------------------------------
   # Alert conditions

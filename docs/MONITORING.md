@@ -184,27 +184,45 @@ ignore it.
 So the primary measure is **PSI**, with Jensen–Shannon distance secondary. Both
 are effect sizes and neither has this failure mode.
 
-### Thresholds calibrated against an empirical null
+### Thresholds calibrated against an empirical null — MEASURED
 
-The credit-risk convention (PSI < 0.1 stable, 0.1–0.2 moderate, > 0.2
-significant) is defensible but generic — it says nothing about how much *this*
+The credit-risk convention (PSI < 0.1 stable, 0.1-0.2 moderate, > 0.2
+significant) is defensible but generic. It says nothing about how much *this*
 dataset's features naturally churn.
 
-So Phase 6 measures that:
+So Phase 6 measured it: the training period was split into 20 windows of 1,994
+rows — periods already accepted as stable, by having trained on them — and PSI
+computed between adjacent pairs, 19 comparisons per feature.
 
-1. Split the training period into 20 consecutive equal windows — periods already
-   accepted as stable, by having trained on them.
-2. Compute PSI per feature between adjacent windows.
-3. That distribution **is** this dataset's normal churn.
-4. `threshold[feature] = clamp(percentile_99(null_psi[feature]), 0.10, 0.25)`
+```
+threshold[feature] = clamp(percentile_99(null_psi[feature]), 0.10, 0.25)
+```
 
-Every threshold then answers "why that number?" with **"because this feature
-moved that much between stable training windows only 1% of the time"** — a
-per-feature, data-derived answer.
+**The result across all 43 features and 19 stable comparisons (817 checks):**
 
-The clamp stops a noisy feature setting an absurdly permissive bar and a frozen
-one setting a hair-trigger. Floor and ceiling are the `STANDARD` credit-risk
-values.
+| Approach | False alarms | Rate |
+|:--|--:|--:|
+| Uniform PSI > 0.10 | 21 | **2.57%** |
+| Calibrated per-feature | 6 | **0.73%** |
+
+The calibrated rate closely matches the 1% the 99th percentile predicts — a
+check that the method does what it claims.
+
+**The finding that settles the argument:** `medical_specialty` has a median null
+PSI of **0.1196**, *above* the conventional 0.10. It would have breached in
+**11 of 19 windows we had already accepted as stable** — alarming more than half
+the time on data with no drift in it.
+
+| Outcome | Count |
+|:--|--:|
+| Clamped to the 0.10 floor (genuinely stable) | 37 |
+| Set their own threshold from measured churn | 4 |
+| Clamped to the 0.25 ceiling (very volatile) | 2 |
+
+Most features land on the conventional floor. Calibration did not overturn the
+convention — it identified the six features for which the convention was wrong,
+which is the whole value. See
+[ADR 0007](DECISIONS/0007-drift-thresholds.md).
 
 ### Alert conditions
 
@@ -310,20 +328,55 @@ timestamps should not require arithmetic.
 
 ---
 
-## 6. What is not verified yet
+## 6. Drift detection, and what it found
 
-Stated plainly rather than implied:
+### Real drift exists, and it is detected
 
-- **No screenshots.** Docker is not installed on the development machine, so
-  Grafana has never rendered these dashboards. The JSON is validated
-  structurally and by test, but "readable in ten seconds" is a claim about
-  something nobody has looked at yet.
-- **Alert rules have never fired against real data.** CI validates every PromQL
-  expression with `promtool` — which is genuine verification that they parse and
-  are well formed, and is where a typo would otherwise ship silently and simply
-  never fire. But firing behaviour is unproven.
-- **Drift metrics do not exist yet.** The drift dashboard reads metrics the
-  Phase 6 monitoring job will export. It is built now so the metric contract is
-  fixed before the job is written, rather than the dashboard being shaped around
-  whatever the job happened to emit.
+Replaying the **untouched** test split flags 6 then 5 features across two
+windows: `medical_specialty`, `admission_source_id`, `admission_type_id`,
+`number_diagnoses` — the same recording-practice features Phase 1 found shifting
+across 1999-2008.
+
+This is not a false alarm and not a demonstration. The model genuinely operates
+on a drifted population, consistent with the positive rate falling from 9.87%
+(train) to 7.57% (test).
+
+### Induced drift, labelled as induced
+
+Because real drift is already present, the "clean" windows also alert. Reporting
+"the detector fired after we induced drift" would therefore be misleading — it
+fires beforehand too.
+
+The induced effect is instead demonstrated on the **manipulated feature
+specifically**:
+
+| Window | Origin | `age` PSI | Threshold | Breaching |
+|--:|:--|--:|--:|:--|
+| 0 | real | 0.0211 | 0.10 | no |
+| 1 | real | 0.0143 | 0.10 | no |
+| 2 | **induced** | **0.5292** | 0.10 | **yes** |
+
+Prediction drift responds too: the alert rate moves from a 0.26 reference to
+**0.414** in the induced window, because over-sampling older patients raises the
+share above the decision threshold.
+
+Every artefact carries `drift_origin: "real" | "induced"` as its first key, and
+every manipulation records exactly what it changed. This is enforced by test,
+not by discipline — a demo showing a detector fire without saying the drift was
+manufactured claims something it has not earned.
+
+## 7. What is still not verified
+
+- **No screenshots.** Docker is not installed, so Grafana has never rendered
+  these dashboards. "Readable in ten seconds" remains a claim about something
+  nobody has looked at.
+- **Alert rules have never fired against live Prometheus data.** CI validates
+  every PromQL expression with `promtool`, which is where a typo would otherwise
+  ship silently and simply never fire — but firing behaviour is unproven.
+- **The monitoring job is not scheduled.** It runs on demand via
+  `mlservice monitor check`. Scheduling belongs with the Phase 7 retraining
+  trigger.
+- **Delayed labels are simulated**, not observed. Maturation is compressed for
+  the demo; the ordering and delay structure are preserved, but no label has
+  actually waited 30 days.
 - **Latency numbers need re-measuring off-box.** See the caveat in §2.
