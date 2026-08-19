@@ -1,0 +1,1272 @@
+{
+  "generated_utc": "2026-08-19T06:53:39.775372+00:00",
+  "drift_origin": "induced",
+  "honesty_note": "Drift in these windows is ARTIFICIAL \u2014 deliberately introduced to demonstrate detection. It is not a finding about the data.",
+  "inducer": "age",
+  "first_detection_window": 1,
+  "alert": {
+    "confirmed": true,
+    "required_features_per_window": 3,
+    "required_consecutive_windows": 2,
+    "windows_examined": 2,
+    "breaching_counts": [
+      5,
+      8
+    ],
+    "reason": "3+ features breached in 2 consecutive windows"
+  },
+  "windows": [
+    {
+      "index": 0,
+      "rows": 5000,
+      "drift_origin": "real",
+      "manipulations": [],
+      "drift": {
+        "window_start": "220877472",
+        "window_end": "257031090",
+        "window_rows": 5000,
+        "reference_rows": 39894,
+        "feature_schema_hash": "06f5f0b873ca95f6",
+        "comparable": true,
+        "n_features": 43,
+        "n_breaching": 6,
+        "breaching_features": [
+          "number_diagnoses",
+          "admission_type_id",
+          "admission_source_id",
+          "medical_specialty",
+          "max_glu_serum",
+          "insulin"
+        ],
+        "features": [
+          {
+            "feature": "time_in_hospital",
+            "psi": 0.008092,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "num_lab_procedures",
+            "psi": 0.059026,
+            "threshold": 0.168198,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "num_procedures",
+            "psi": 0.006705,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "num_medications",
+            "psi": 0.039025,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "number_outpatient",
+            "psi": 0.039589,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "number_emergency",
+            "psi": 0.0,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "number_inpatient",
+            "psi": 0.021371,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "number_diagnoses",
+            "psi": 0.273994,
+            "threshold": 0.220989,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "race",
+            "psi": 0.096309,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "gender",
+            "psi": 0.001319,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "age",
+            "psi": 0.021132,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "admission_type_id",
+            "psi": 0.195143,
+            "threshold": 0.151419,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "discharge_disposition_id",
+            "psi": 0.089474,
+            "threshold": 0.25,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "admission_source_id",
+            "psi": 0.386041,
+            "threshold": 0.25,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "medical_specialty",
+            "psi": 0.890138,
+            "threshold": 0.24231,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "diag_1",
+            "psi": 0.023945,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "diag_2",
+            "psi": 0.061055,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "diag_3",
+            "psi": 0.072931,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "max_glu_serum",
+            "psi": 0.107845,
+            "threshold": 0.1,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "A1Cresult",
+            "psi": 0.033649,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "metformin",
+            "psi": 0.009419,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "repaglinide",
+            "psi": 0.000235,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "nateglinide",
+            "psi": 0.002844,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "chlorpropamide",
+            "psi": 0.002882,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "glimepiride",
+            "psi": 0.006689,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "acetohexamide",
+            "psi": 7.8e-05,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "glipizide",
+            "psi": 0.002358,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "glyburide",
+            "psi": 0.01886,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "tolbutamide",
+            "psi": 0.000111,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "pioglitazone",
+            "psi": 0.010525,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "rosiglitazone",
+            "psi": 0.000741,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "acarbose",
+            "psi": 4e-06,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "miglitol",
+            "psi": 0.000119,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "troglitazone",
+            "psi": 0.000321,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "tolazamide",
+            "psi": 0.004594,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "insulin",
+            "psi": 0.113568,
+            "threshold": 0.1,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "glyburide-metformin",
+            "psi": 0.006667,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "glipizide-metformin",
+            "psi": 3.5e-05,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "glimepiride-pioglitazone",
+            "psi": 0.0,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "metformin-rosiglitazone",
+            "psi": 0.0,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "metformin-pioglitazone",
+            "psi": 0.0,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "change",
+            "psi": 0.055963,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "diabetesMed",
+            "psi": 0.02273,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          }
+        ],
+        "prediction": {
+          "reference_mean": 0.08164,
+          "current_mean": 0.090339,
+          "mean_relative_change": 0.106549,
+          "mean_outside_reference_ci": true,
+          "reference_ci_99": [
+            0.080042,
+            0.083093
+          ],
+          "reference_alert_rate": 0.26,
+          "current_alert_rate": 0.3342,
+          "alert_rate_relative_change": 0.285385,
+          "alert_rate_threshold": 0.25,
+          "breaching": true
+        },
+        "labels": {
+          "sufficient_labels": true,
+          "n_matured": 3000,
+          "baseline_pr_auc": 0.123388,
+          "observed_pr_auc": 0.12655,
+          "drop": -0.003162,
+          "bootstrap_se": 0.013917,
+          "drop_in_standard_errors": -0.227,
+          "threshold_se": 2.0,
+          "breaching": false
+        },
+        "notes": []
+      },
+      "alert_state": {
+        "confirmed": false,
+        "required_features_per_window": 3,
+        "required_consecutive_windows": 2,
+        "windows_examined": 1,
+        "breaching_counts": [
+          6
+        ],
+        "reason": "not confirmed \u2014 a single-window breach is treated as noise"
+      }
+    },
+    {
+      "index": 1,
+      "rows": 5000,
+      "drift_origin": "real",
+      "manipulations": [],
+      "drift": {
+        "window_start": "257033328",
+        "window_end": "298389176",
+        "window_rows": 5000,
+        "reference_rows": 39894,
+        "feature_schema_hash": "06f5f0b873ca95f6",
+        "comparable": true,
+        "n_features": 43,
+        "n_breaching": 5,
+        "breaching_features": [
+          "number_diagnoses",
+          "admission_type_id",
+          "admission_source_id",
+          "medical_specialty",
+          "max_glu_serum"
+        ],
+        "features": [
+          {
+            "feature": "time_in_hospital",
+            "psi": 0.034287,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "num_lab_procedures",
+            "psi": 0.049052,
+            "threshold": 0.168198,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "num_procedures",
+            "psi": 0.004622,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "num_medications",
+            "psi": 0.02793,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "number_outpatient",
+            "psi": 0.024286,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "number_emergency",
+            "psi": 0.0,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "number_inpatient",
+            "psi": 0.029037,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "number_diagnoses",
+            "psi": 0.290272,
+            "threshold": 0.220989,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "race",
+            "psi": 0.033714,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "gender",
+            "psi": 0.002417,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "age",
+            "psi": 0.014319,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "admission_type_id",
+            "psi": 0.211573,
+            "threshold": 0.151419,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "discharge_disposition_id",
+            "psi": 0.097915,
+            "threshold": 0.25,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "admission_source_id",
+            "psi": 0.31402,
+            "threshold": 0.25,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "medical_specialty",
+            "psi": 0.868281,
+            "threshold": 0.24231,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "diag_1",
+            "psi": 0.01742,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "diag_2",
+            "psi": 0.063113,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "diag_3",
+            "psi": 0.03889,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "max_glu_serum",
+            "psi": 0.110643,
+            "threshold": 0.1,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "A1Cresult",
+            "psi": 0.022085,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "metformin",
+            "psi": 0.011121,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "repaglinide",
+            "psi": 0.00034,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "nateglinide",
+            "psi": 0.00222,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "chlorpropamide",
+            "psi": 0.002882,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "glimepiride",
+            "psi": 0.006935,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "acetohexamide",
+            "psi": 7.8e-05,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "glipizide",
+            "psi": 0.006104,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "glyburide",
+            "psi": 0.02488,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "tolbutamide",
+            "psi": 0.002224,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "pioglitazone",
+            "psi": 0.008166,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "rosiglitazone",
+            "psi": 0.030007,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "acarbose",
+            "psi": 0.001311,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "miglitol",
+            "psi": 0.000119,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "troglitazone",
+            "psi": 0.000321,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "tolazamide",
+            "psi": 0.004594,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "insulin",
+            "psi": 0.093352,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "glyburide-metformin",
+            "psi": 0.007608,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "glipizide-metformin",
+            "psi": 0.000601,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "glimepiride-pioglitazone",
+            "psi": 0.0,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "metformin-rosiglitazone",
+            "psi": 0.001054,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "metformin-pioglitazone",
+            "psi": 0.0,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "change",
+            "psi": 0.0259,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          },
+          {
+            "feature": "diabetesMed",
+            "psi": 0.007741,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 5000
+          }
+        ],
+        "prediction": {
+          "reference_mean": 0.08164,
+          "current_mean": 0.087793,
+          "mean_relative_change": 0.075368,
+          "mean_outside_reference_ci": true,
+          "reference_ci_99": [
+            0.080042,
+            0.083093
+          ],
+          "reference_alert_rate": 0.26,
+          "current_alert_rate": 0.2956,
+          "alert_rate_relative_change": 0.136923,
+          "alert_rate_threshold": 0.25,
+          "breaching": true
+        },
+        "labels": {
+          "sufficient_labels": true,
+          "n_matured": 3000,
+          "baseline_pr_auc": 0.123388,
+          "observed_pr_auc": 0.150095,
+          "drop": -0.026707,
+          "bootstrap_se": 0.018559,
+          "drop_in_standard_errors": -1.439,
+          "threshold_se": 2.0,
+          "breaching": false
+        },
+        "notes": []
+      },
+      "alert_state": {
+        "confirmed": true,
+        "required_features_per_window": 3,
+        "required_consecutive_windows": 2,
+        "windows_examined": 2,
+        "breaching_counts": [
+          6,
+          5
+        ],
+        "reason": "3+ features breached in 2 consecutive windows"
+      }
+    },
+    {
+      "index": 2,
+      "rows": 3298,
+      "drift_origin": "induced",
+      "manipulations": [
+        {
+          "feature": "age",
+          "kind": "resample",
+          "detail": "over-sampled ['[70-80)', '[80-90)'] with weight 4.0 \u2014 a plausible demographic shift toward an older population",
+          "before": {
+            "[10-20)": 0.0042,
+            "[20-30)": 0.0121,
+            "[30-40)": 0.0379,
+            "[40-50)": 0.0816,
+            "[50-60)": 0.1701,
+            "[60-70)": 0.2471,
+            "[70-80)": 0.2432,
+            "[80-90)": 0.1771,
+            "[90-100)": 0.0267
+          },
+          "after": {
+            "[10-20)": 0.0012,
+            "[20-30)": 0.0082,
+            "[30-40)": 0.0194,
+            "[40-50)": 0.0331,
+            "[50-60)": 0.0679,
+            "[60-70)": 0.1137,
+            "[70-80)": 0.429,
+            "[80-90)": 0.3138,
+            "[90-100)": 0.0136
+          }
+        }
+      ],
+      "drift": {
+        "window_start": "298404566",
+        "window_end": "366195950",
+        "window_rows": 3298,
+        "reference_rows": 39894,
+        "feature_schema_hash": "06f5f0b873ca95f6",
+        "comparable": true,
+        "n_features": 43,
+        "n_breaching": 8,
+        "breaching_features": [
+          "number_diagnoses",
+          "race",
+          "age",
+          "admission_type_id",
+          "admission_source_id",
+          "medical_specialty",
+          "diag_2",
+          "max_glu_serum"
+        ],
+        "features": [
+          {
+            "feature": "time_in_hospital",
+            "psi": 0.013782,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "num_lab_procedures",
+            "psi": 0.037711,
+            "threshold": 0.168198,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "num_procedures",
+            "psi": 0.015264,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "num_medications",
+            "psi": 0.04312,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "number_outpatient",
+            "psi": 0.014861,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "number_emergency",
+            "psi": 0.0,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "number_inpatient",
+            "psi": 0.012709,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "number_diagnoses",
+            "psi": 0.607241,
+            "threshold": 0.220989,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "race",
+            "psi": 0.128787,
+            "threshold": 0.1,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "gender",
+            "psi": 0.000276,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "age",
+            "psi": 0.529203,
+            "threshold": 0.1,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "admission_type_id",
+            "psi": 0.247417,
+            "threshold": 0.151419,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "discharge_disposition_id",
+            "psi": 0.115657,
+            "threshold": 0.25,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "admission_source_id",
+            "psi": 0.317677,
+            "threshold": 0.25,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "medical_specialty",
+            "psi": 1.077152,
+            "threshold": 0.24231,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "diag_1",
+            "psi": 0.041995,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "diag_2",
+            "psi": 0.174811,
+            "threshold": 0.1,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "diag_3",
+            "psi": 0.092759,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "max_glu_serum",
+            "psi": 0.153547,
+            "threshold": 0.1,
+            "breaching": true,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "A1Cresult",
+            "psi": 0.04173,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "metformin",
+            "psi": 0.002254,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "repaglinide",
+            "psi": 0.010134,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "nateglinide",
+            "psi": 0.005859,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "chlorpropamide",
+            "psi": 0.010703,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "glimepiride",
+            "psi": 0.005789,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "acetohexamide",
+            "psi": 7.8e-05,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "glipizide",
+            "psi": 0.004234,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "glyburide",
+            "psi": 0.020873,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "tolbutamide",
+            "psi": 0.002224,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "pioglitazone",
+            "psi": 0.001989,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "rosiglitazone",
+            "psi": 0.089155,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "acarbose",
+            "psi": 0.001068,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "miglitol",
+            "psi": 0.001788,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "troglitazone",
+            "psi": 0.000321,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "tolazamide",
+            "psi": 0.004594,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "insulin",
+            "psi": 0.066156,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "glyburide-metformin",
+            "psi": 0.001437,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "glipizide-metformin",
+            "psi": 0.000601,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "glimepiride-pioglitazone",
+            "psi": 0.0,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "metformin-rosiglitazone",
+            "psi": 0.00388,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "metformin-pioglitazone",
+            "psi": 0.0,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "change",
+            "psi": 0.016419,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          },
+          {
+            "feature": "diabetesMed",
+            "psi": 0.002482,
+            "threshold": 0.1,
+            "breaching": false,
+            "reference_n": 39894,
+            "current_n": 3298
+          }
+        ],
+        "prediction": {
+          "reference_mean": 0.08164,
+          "current_mean": 0.098698,
+          "mean_relative_change": 0.208943,
+          "mean_outside_reference_ci": true,
+          "reference_ci_99": [
+            0.080042,
+            0.083093
+          ],
+          "reference_alert_rate": 0.26,
+          "current_alert_rate": 0.413887,
+          "alert_rate_relative_change": 0.591874,
+          "alert_rate_threshold": 0.25,
+          "breaching": true
+        },
+        "labels": {
+          "sufficient_labels": true,
+          "n_matured": 1978,
+          "baseline_pr_auc": 0.123388,
+          "observed_pr_auc": 0.138508,
+          "drop": -0.01512,
+          "bootstrap_se": 0.020348,
+          "drop_in_standard_errors": -0.743,
+          "threshold_se": 2.0,
+          "breaching": false
+        },
+        "notes": []
+      },
+      "alert_state": {
+        "confirmed": true,
+        "required_features_per_window": 3,
+        "required_consecutive_windows": 2,
+        "windows_examined": 2,
+        "breaching_counts": [
+          5,
+          8
+        ],
+        "reason": "3+ features breached in 2 consecutive windows"
+      }
+    }
+  ]
+}

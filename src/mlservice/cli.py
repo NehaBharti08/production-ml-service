@@ -189,6 +189,143 @@ def train_run(
         )
 
 
+monitor_app = typer.Typer(help="Drift detection and monitoring.", no_args_is_help=True)
+app.add_typer(monitor_app, name="monitor")
+
+
+@monitor_app.command("calibrate")
+def monitor_calibrate(
+    write: Annotated[
+        bool, typer.Option("--write/--dry-run", help="Write thresholds into configs/.")
+    ] = True,
+) -> None:
+    """Derive per-feature drift thresholds from the training period's own churn.
+
+    Replaces the PLACEHOLDER in configs/thresholds.yaml with a MEASURED value
+    per feature: that feature's own 99th-percentile PSI between adjacent stable
+    training windows.
+    """
+    import pandas as pd
+
+    from mlservice.monitoring import null_calibration
+
+    settings = get_settings()
+    with request_context():
+        train = pd.read_parquet(settings.paths.data_processed / "train.parquet")
+        result = null_calibration.calibrate(train)
+        null_calibration.save_report(result)
+        if write:
+            null_calibration.write_thresholds(result)
+
+    summary = result.summary()
+    typer.secho(
+        f"  OK    calibrated {summary['n_features']} features over {summary['n_windows']} windows",
+        fg=typer.colors.GREEN,
+        bold=True,
+    )
+    typer.echo(f"        {summary['n_unclamped']} set their own threshold from measured churn")
+    typer.echo(
+        f"        {len(summary['clamped_to_floor'])} clamped to the {summary['floor']} floor"
+    )
+    typer.echo(
+        f"        {len(summary['clamped_to_ceiling'])} clamped to the {summary['ceiling']} ceiling"
+    )
+    if not write:
+        typer.secho("  note  dry run — nothing written", fg=typer.colors.YELLOW)
+
+
+@monitor_app.command("replay")
+def monitor_replay(
+    induce_drift: Annotated[
+        bool, typer.Option("--induce-drift", help="Deliberately manipulate later windows.")
+    ] = False,
+    inducer: Annotated[
+        str, typer.Option("--inducer", help="age | utilisation | specialty")
+    ] = "age",
+    window_rows: Annotated[int | None, typer.Option("--window-rows")] = None,
+) -> None:
+    """Replay windows through the drift detectors.
+
+    Without --induce-drift this replays the held-out test split untouched, so
+    any drift found is REAL. With it, later windows are deliberately shifted and
+    every artefact is labelled induced.
+    """
+    from mlservice.monitoring import replay as replay_mod
+    from mlservice.monitoring import reports as reports_mod
+
+    mode = "induced" if induce_drift else "real"
+    with request_context():
+        result = reports_mod.run_replay(mode=mode, inducer=inducer, window_rows=window_rows)
+        path = replay_mod.save_result(result)
+
+    if result.drift_origin == "induced":
+        typer.secho(
+            f"  NOTE  drift in later windows is ARTIFICIAL (inducer: {inducer}) — "
+            "a demonstration, not a finding",
+            fg=typer.colors.YELLOW,
+            bold=True,
+        )
+    else:
+        typer.secho(
+            "  NOTE  no manipulation — any drift below is real change in the 1999-2008 data",
+            fg=typer.colors.CYAN,
+        )
+
+    typer.echo()
+    typer.echo(f"      {'window':>6} {'origin':>9} {'breaching':>10}  features")
+    for w in result.windows:
+        d = w["drift"]
+        names = ", ".join(d["breaching_features"][:4]) or "-"
+        typer.echo(
+            f"      {w['index']:>6} {w['drift_origin']:>9} "
+            f"{d['n_breaching']:>4}/{d['n_features']:<5} {names}"
+        )
+
+    typer.echo()
+    alert = result.alert
+    colour = typer.colors.RED if alert["confirmed"] else typer.colors.GREEN
+    typer.secho(
+        f"  {'ALERT' if alert['confirmed'] else 'OK   '} {alert['reason']}", fg=colour, bold=True
+    )
+    if result.first_detection_window is not None:
+        typer.echo(f"        first confirmed at window {result.first_detection_window}")
+    typer.echo(f"        report -> {path}")
+
+
+@monitor_app.command("check")
+def monitor_check() -> None:
+    """Analyse the most recent prediction-log window against the reference."""
+    from mlservice.monitoring import drift as drift_mod
+    from mlservice.monitoring import prediction_log
+    from mlservice.monitoring import reports as reports_mod
+
+    with request_context():
+        records = prediction_log.read_records()
+        if not records:
+            typer.secho(
+                "  note  prediction log is empty — nothing to check", fg=typer.colors.YELLOW
+            )
+            raise typer.Exit(code=0)
+
+        import pandas as pd
+
+        frame = pd.DataFrame([r["features_raw"] for r in records])
+        reference = reports_mod.load_reference()
+        report = drift_mod.analyse_window(reference=reference, current=frame)
+        path = drift_mod.save_report(report)
+        reports_mod.export_to_prometheus(report)
+
+    typer.secho(
+        f"  {'DRIFT' if report.breaching else 'OK   '} "
+        f"{len(report.breaching)}/{len(report.features)} features breaching",
+        fg=typer.colors.RED if report.breaching else typer.colors.GREEN,
+        bold=True,
+    )
+    for f in report.breaching:
+        typer.echo(f"        {f.feature:26s} psi {f.psi:.4f} > {f.threshold:.4f}")
+    typer.echo(f"        report -> {path}")
+
+
 @app.command("config")
 def show_config(
     as_json: Annotated[bool, typer.Option("--json", help="Emit JSON.")] = False,

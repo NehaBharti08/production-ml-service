@@ -71,6 +71,15 @@ reports/*.json
 # committing it lets a reviewer check the card against the run.
 !reports/training_summary.json
 
+# Same exception again. null_calibration.json is the EVIDENCE that the drift
+# thresholds were derived rather than invented — it holds the full null
+# distribution per feature, not just the chosen value. The replay reports
+# carry the drift_origin labelling that makes the induced-drift demo honest.
+# All three are aggregate statistics; none contain row-level records.
+!reports/null_calibration.json
+!reports/replay_real.json
+!reports/replay_induced_age.json
+
 # --- Python ------------------------------------------------------------------
 .venv/
 venv/

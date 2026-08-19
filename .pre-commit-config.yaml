@@ -104,7 +104,9 @@ repos:
             uv\.lock|
             \.secrets\.baseline|
             reports/data_audit\.json|
-            reports/training_summary\.json
+            reports/training_summary\.json|
+            reports/null_calibration\.json|
+            reports/replay_.*\.json
           )$
 
   # --- Commit message --------------------------------------------------------
