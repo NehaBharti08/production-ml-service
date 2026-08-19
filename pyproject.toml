@@ -119,6 +119,9 @@ ignore = [
 # deliberate typography in the rendered output, not ambiguous-character typos.
 "src/mlservice/data/render_audit.py" = ["RUF001"]
 "src/mlservice/models/render_card.py" = ["RUF001"]
+# These modules carry long prose docstrings explaining the reasoning behind
+# each threshold. En dashes there are deliberate typography, not typos.
+"src/mlservice/monitoring/*.py" = ["RUF002"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["mlservice"]
