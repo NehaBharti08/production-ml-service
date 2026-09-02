@@ -341,7 +341,7 @@ def analyse_window(
     return report
 
 
-def alert_state(reports: list[DriftReport]) -> dict[str, Any]:
+def alert_state_from_counts(breaching_counts: list[int]) -> dict[str, Any]:
     """Decide whether consecutive windows constitute a confirmed alert.
 
     **Two-window confirmation is the whole point.** A single window breaching is
@@ -349,27 +349,94 @@ def alert_state(reports: list[DriftReport]) -> dict[str, Any]:
     breach per window by chance alone. Requiring the same condition in
     consecutive windows is what stops the pager firing on sampling variation —
     and a pager that fires on noise is one people learn to ignore.
+
+    Takes counts rather than reports so the retraining CLI can evaluate the same
+    rule against drift reports it loaded from disk. The confirmation logic is the
+    thing that decides whether a retrain fires; it must not exist twice.
     """
     config = get_thresholds().model_dump()["drift"]["alert"]["data_drift"]
     required_features = config["min_features_breaching"]
     required_windows = config["consecutive_windows"]
 
-    recent = reports[-required_windows:]
-    windows_breaching = [len(r.breaching) >= required_features for r in recent]
-    confirmed = len(recent) >= required_windows and all(windows_breaching)
+    recent = breaching_counts[-required_windows:]
+    confirmed = len(recent) >= required_windows and all(c >= required_features for c in recent)
 
     return {
         "confirmed": confirmed,
         "required_features_per_window": required_features,
         "required_consecutive_windows": required_windows,
         "windows_examined": len(recent),
-        "breaching_counts": [len(r.breaching) for r in recent],
+        "breaching_counts": recent,
         "reason": (
             f"{required_features}+ features breached in {required_windows} consecutive windows"
             if confirmed
             else "not confirmed — a single-window breach is treated as noise"
         ),
     }
+
+
+def alert_state(reports: list[DriftReport]) -> dict[str, Any]:
+    """:func:`alert_state_from_counts` over live report objects."""
+    return alert_state_from_counts([len(r.breaching) for r in reports])
+
+
+def load_reports(limit: int | None = None) -> list[dict[str, Any]]:
+    """Load every saved drift window oldest-first, from both report shapes.
+
+    Sorted by filename, which is a UTC timestamp — so lexical order *is*
+    chronological order. That is a property of the naming scheme in
+    :func:`save_report`, not an accident, and the two must stay in step.
+
+    Replay runs are read as well as standalone reports, because they store
+    their windows inline. Reading only ``drift_*.json`` meant the retraining
+    trigger saw an empty history immediately after a replay that had detected
+    drift, and answered "no confirmed drift" having examined nothing at all.
+    A monitoring system that cannot tell *no evidence* from *evidence of no
+    drift* reports reassuringly in exactly the case that should worry you.
+    """
+    import json
+
+    reports_dir = get_settings().paths.reports
+    out: list[dict[str, Any]] = []
+
+    for path in sorted(reports_dir.glob("drift_*.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["source"] = path.name
+        out.append(payload)
+
+    for path in sorted(reports_dir.glob("replay_*.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for window in payload.get("windows", []):
+            report = dict(window.get("drift") or {})
+            if not report:
+                continue
+            # Carried through so a caller can tell induced demo drift from the
+            # real 1999->2008 shift. Losing that distinction here is how an
+            # honest report turns into a misleading one two layers up.
+            report.setdefault("drift_origin", window.get("drift_origin"))
+            report["source"] = path.name
+            out.append(report)
+
+    if limit is not None:
+        out = out[-limit:]
+    return out
+
+
+def breaching_counts(reports: list[dict[str, Any]]) -> list[int]:
+    """Breaching-feature count per report, indexed straight rather than ``.get``.
+
+    Deliberately raises ``KeyError`` on a report missing the key instead of
+    defaulting to zero. The first version of the retraining trigger read
+    ``report.get("breaching", [])`` — but :meth:`DriftReport.to_dict` emits
+    ``n_breaching``; ``breaching`` is only a property on the live object. Every
+    window therefore scored zero and the trigger reported "no confirmed drift"
+    against a replay whose own alert state said ``confirmed: True``.
+
+    A default is the wrong tool for a key that must exist. Silence there buys a
+    tidy line of code and pays for it with a monitoring system that says the
+    reassuring thing when it is broken.
+    """
+    return [int(r["n_breaching"]) for r in reports]
 
 
 def save_report(report: DriftReport, path: Path | None = None) -> Path:
@@ -388,9 +455,12 @@ __all__ = [
     "DriftReport",
     "FeatureDrift",
     "alert_state",
+    "alert_state_from_counts",
     "analyse_window",
+    "breaching_counts",
     "detect_data_drift",
     "detect_label_drift",
     "detect_prediction_drift",
+    "load_reports",
     "save_report",
 ]
