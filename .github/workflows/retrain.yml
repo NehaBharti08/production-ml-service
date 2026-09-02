@@ -1,0 +1,221 @@
+# Scheduled and manual retraining.
+#
+# The important property of this workflow is what it does NOT do: it never
+# promotes. It evaluates triggers, retrains if one fired, runs the promotion
+# gates, and opens a pull request with the evidence. A human merges.
+#
+# That is not timidity. Automated promotion is defensible when the gates are
+# trusted, the canary is real, and rollback has been exercised under load — and
+# on this project the canary has never run, because Docker is not installed on
+# the development machine. Wiring auto-promotion to gates whose downstream
+# safety net is untested would be the exact failure this repository is about.
+#
+# So the gates run automatically and the decision is written down; shipping
+# stays manual until the canary is genuinely demonstrated.
+name: Retrain
+
+on:
+  schedule:
+    # 03:00 UTC on the 1st. Matches retraining.triggers.scheduled.cron in
+    # configs/thresholds.yaml — the config is the source of truth, this is a
+    # copy, and they must be changed together.
+    - cron: "0 3 1 * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Retrain even if no trigger fired"
+        type: boolean
+        default: false
+      reason:
+        description: "Why (recorded in the promotion history)"
+        type: string
+        default: "manual dispatch"
+
+permissions:
+  contents: read
+
+concurrency:
+  # Two retrains racing would register two versions and leave the gates
+  # comparing against a moving incumbent.
+  group: retrain
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: evaluate triggers
+    runs-on: ubuntu-latest
+    outputs:
+      retrain: ${{ steps.triggers.outputs.retrain }}
+      reason: ${{ steps.triggers.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked --all-groups
+
+      - name: Evaluate retraining triggers
+        id: triggers
+        run: |
+          set -euo pipefail
+          uv run mlservice retrain check --json > triggers.json
+          cat triggers.json
+
+          RETRAIN=$(python -c "import json;print(str(json.load(open('triggers.json'))['retrain']).lower())")
+          REASON=$(python -c "import json;print(json.load(open('triggers.json'))['reason'])")
+
+          if [ "${{ inputs.force }}" = "true" ]; then
+            RETRAIN=true
+            REASON="forced: ${{ inputs.reason }}"
+          fi
+
+          echo "retrain=${RETRAIN}" >> "$GITHUB_OUTPUT"
+          echo "reason=${REASON}"   >> "$GITHUB_OUTPUT"
+          echo "### Trigger evaluation" >> "$GITHUB_STEP_SUMMARY"
+          echo "- retrain: \`${RETRAIN}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- reason: ${REASON}" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: trigger-evaluation
+          path: triggers.json
+
+  retrain:
+    name: retrain and gate
+    needs: check
+    if: needs.check.outputs.retrain == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked --all-groups
+
+      - name: Cache dataset
+        uses: actions/cache@v6.1.0
+        with:
+          path: data/raw
+          key: dataset-${{ hashFiles('data/checksums.txt') }}
+
+      - name: Download and verify dataset
+        run: uv run mlservice data download
+
+      # The incumbent's evidence must be captured BEFORE retraining overwrites
+      # the training summary, or the gates end up comparing the challenger
+      # against itself and pass unanimously while checking nothing.
+      - name: Capture the incumbent's evidence
+        run: |
+          set -euo pipefail
+          uv run pytest tests/behavior -m behavior -q \
+            --json-report --json-report-file=incumbent-behavior.json
+          uv run pytest tests/data -m data -q \
+            --json-report --json-report-file=incumbent-data.json
+          uv run mlservice retrain evidence \
+            --behavioral   incumbent-behavior.json \
+            --data-quality incumbent-data.json \
+            --out          reports/incumbent_evidence.json
+
+      - name: Train the challenger
+        run: uv run mlservice train run
+
+      - name: Collect the challenger's evidence
+        run: |
+          set -euo pipefail
+          uv run pytest tests/behavior -m behavior -q \
+            --json-report --json-report-file=challenger-behavior.json
+          uv run pytest tests/data -m data -q \
+            --json-report --json-report-file=challenger-data.json
+          uv run mlservice retrain evidence \
+            --behavioral   challenger-behavior.json \
+            --data-quality challenger-data.json \
+            --out          reports/challenger_evidence.json
+
+      # The gates decide, and they run whether or not anyone is watching. Exit
+      # code 1 means blocked, which must not fail the workflow — a blocked
+      # promotion is the system working, not a broken build. So the exit code
+      # is swallowed and the decision file is the record.
+      - name: Promotion gates
+        id: gates
+        run: |
+          set -uo pipefail
+          uv run mlservice retrain gates \
+            --challenger reports/challenger_evidence.json \
+            --incumbent  reports/incumbent_evidence.json \
+            --out        reports/gate_decision.json | tee gates.log || true
+
+          PROMOTE=$(python -c "import json;print(str(json.load(open('reports/gate_decision.json'))['promote']).lower())")
+          echo "promote=${PROMOTE}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Promotion gates"
+            echo '```'
+            cat gates.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify the rollback path before proposing anything
+        # If rollback is broken, no promotion should be proposed at all — the
+        # undo lever is a precondition for the change, not a follow-up task.
+        run: uv run pytest tests/integration/test_rollback_path.py -m integration -rs
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: retraining-evidence
+          path: |
+            reports/gate_decision.json
+            reports/challenger_evidence.json
+            reports/incumbent_evidence.json
+            gates.log
+
+      - name: Open a pull request with the evidence
+        if: steps.gates.outputs.promote == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BRANCH="retrain/$(date -u +%Y%m%d-%H%M%S)"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add -f reports/gate_decision.json reports/challenger_evidence.json \
+                     reports/incumbent_evidence.json
+          git commit -m "chore(retrain): challenger passed all promotion gates
+
+          Trigger: ${{ needs.check.outputs.reason }}
+
+          The gate decision and challenger evaluation are attached. Promotion is
+          a separate, human step:
+
+              uv run mlservice retrain promote --version <N> \\
+                --decision reports/gate_decision.json --trigger scheduled"
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "Retrain: challenger passed all gates" \
+            --body-file - <<'BODY'
+          Automated retraining run.
+
+          **Trigger:** see the run summary.
+          **Gates:** all passed — see `reports/gate_decision.json`.
+
+          This PR does **not** promote anything. Merging records the evidence;
+          promotion is a deliberate command against the registry, because the
+          canary has not been exercised on this project and auto-promotion
+          behind an untested safety net is the failure mode this repo is about.
+
+          Review the calibration numbers specifically. A challenger that ranks
+          better and calibrates worse is a regression here, and the gate that
+          blocks it is the one worth double-checking.
+          BODY
+
+      - name: Report a blocked promotion
+        if: steps.gates.outputs.promote != 'true'
+        run: |
+          echo "Challenger was BLOCKED by the promotion gates. This is the system working."
+          cat reports/gate_decision.json
+          echo "A blocked promotion is not a failed build." >> "$GITHUB_STEP_SUMMARY"
