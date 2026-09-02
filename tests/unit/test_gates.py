@@ -30,7 +30,9 @@ def _evaluation(**overrides: Any) -> dict[str, Any]:
         "subgroups": {"worst_recall_gap": -0.232, "worst_group": "age=[40-50)"},
         "behavioral": {"total": 20, "passed": 20, "failures": []},
         "artifact_loads": True,
-        "feature_schema_hash": "06f5f0b873ca95f6",
+        # Not a secret: a deterministic hash of the feature column list, and the
+        # operational gate compares it against the serving contract.
+        "feature_schema_hash": "06f5f0b873ca95f6",  # pragma: allowlist secret
         "data_quality": {"suite_passed": True, "missingness_increase_pct_points": {}},
     }
     for key, value in overrides.items():
