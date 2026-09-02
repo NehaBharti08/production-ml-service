@@ -38,6 +38,7 @@ dev = [
     # installs as a Python package — no admin rights, no separate toolchain,
     # and it runs today against the host process while Docker is still absent.
     "locust>=2.31",
+    "pytest-json-report>=1.5.0",
 ]
 
 train = [
