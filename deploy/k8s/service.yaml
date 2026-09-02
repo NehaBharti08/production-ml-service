@@ -1,0 +1,38 @@
+# ClusterIP plus a NodePort for the kind demo.
+#
+# Two Services rather than one of type NodePort, because the in-cluster name and
+# the demo access path are different concerns and collapsing them means the
+# manifest you demo is not the manifest you would run.
+apiVersion: v1
+kind: Service
+metadata:
+  name: readmission-api
+  labels:
+    app: readmission-api
+spec:
+  type: ClusterIP
+  selector:
+    app: readmission-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Reachable from the host via the extraPortMapping in kind-cluster.yaml, so the
+# rollback demo can curl a real URL rather than relying on `kubectl port-forward`
+# staying alive across a rollout.
+apiVersion: v1
+kind: Service
+metadata:
+  name: readmission-api-nodeport
+  labels:
+    app: readmission-api
+spec:
+  type: NodePort
+  selector:
+    app: readmission-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      nodePort: 30080

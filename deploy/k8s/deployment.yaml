@@ -1,0 +1,130 @@
+# Deployment for the readmission API.
+#
+# The probes are the reason this manifest exists. `/health/live` and
+# `/health/ready` are separate endpoints answering separate questions, and
+# wiring them to the wrong probe is the most common Kubernetes mistake in ML
+# serving:
+#
+#   liveness  -> "is the process wedged?"   Restarting fixes it.
+#   readiness -> "can it serve traffic?"    Restarting does NOT fix it.
+#
+# Pointing liveness at a readiness-style check that loads a model produces a
+# crash loop whenever the registry is briefly unavailable: the pod is killed for
+# failing a check that a restart cannot possibly satisfy. So liveness here hits
+# the endpoint that returns 200 while the process breathes, and nothing else.
+#
+# That separation is also what makes the rollback demo work. A bad model makes
+# readiness fail, the pod is removed from the Service endpoints, no traffic
+# reaches it, and the previous ReplicaSet keeps serving — which is the failure
+# being contained rather than propagated.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: readmission-api
+  labels:
+    app: readmission-api
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5 # keeps `kubectl rollout undo` meaningful
+  selector:
+    matchLabels:
+      app: readmission-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Never fewer than the current replica count during a rollout, and only
+      # one new pod at a time: on a single-node kind cluster with 15.6 GB total,
+      # a wider surge is how the node starts evicting.
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: readmission-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+    spec:
+      # Fail closed. The API baked its fallback artifact into the image at build
+      # time precisely so it does not need the registry to start.
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: api
+          image: mlservice-api:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: readmission-api-config
+
+          # Startup probe first, so a slow model load does not get mistaken for
+          # a wedged process. Without it, liveness starts counting immediately
+          # and a cold start on a loaded machine looks like a hang.
+          # 30 x 2s = 60s of grace before liveness takes over.
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          # Readiness gates traffic, so it checks the thing that makes traffic
+          # servable: the model is loaded and a canary inference succeeded.
+          # A single failure is enough to pull the pod out of rotation —
+          # readiness is cheap to recover from, unlike a restart.
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+            successThreshold: 1
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              # No CPU limit on purpose: CFS throttling on a latency-sensitive
+              # service turns a busy moment into p99 spikes, and the request is
+              # what actually governs scheduling. Memory IS limited, because
+              # unbounded memory takes the node down with it.
+              memory: 512Mi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: logs
+              mountPath: /app/logs
+
+      volumes:
+        # readOnlyRootFilesystem means anything that writes needs an explicit
+        # mount. emptyDir, not a PVC: prediction logs on the demo cluster are
+        # ephemeral by design, and the docs say so rather than implying
+        # durability the cluster does not provide.
+        - name: tmp
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}

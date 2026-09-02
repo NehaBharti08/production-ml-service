@@ -58,6 +58,14 @@ postgres-data/
 # --- Monitoring output -------------------------------------------------------
 reports/*.html
 reports/*.json
+
+# The promotion history is an append-only audit trail of what was deployed when.
+# It is real operational state, not source: it grows on every promote, rollback
+# and rollback-path verification, and merging two machines' histories would be
+# meaningless. The verified rollback cycle is quoted in docs/RETRAINING_POLICY.md
+# instead, where it can be read without replaying the file.
+reports/*.ndjson
+
 !reports/.gitkeep
 
 # Exception: the data audit is aggregate statistics only — no row-level records,

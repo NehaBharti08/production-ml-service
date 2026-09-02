@@ -1,0 +1,53 @@
+# Horizontal Pod Autoscaler.
+#
+# Scaling on CPU rather than on a custom latency metric, for an honest reason:
+# custom metrics need the Prometheus adapter, and the plan's resource budget
+# rules out running Prometheus inside kind alongside everything else. CPU is the
+# metric that is actually available here, and pretending otherwise would mean
+# committing a manifest that cannot run.
+#
+# 70% rather than the 80% default: this service is latency-sensitive and a
+# logistic-regression inference is short, so queueing starts hurting p99 before
+# CPU saturates. Scaling a little early costs one pod; scaling late costs the SLO.
+#
+# NOTE: the HPA needs metrics-server, which kind does not install by default
+# (and which needs --kubelet-insecure-tls on kind). Without it the HPA reports
+# <unknown>/70% and does nothing. The demo script says so rather than leaving a
+# manifest that silently no-ops.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: readmission-api
+  labels:
+    app: readmission-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: readmission-api
+  minReplicas: 2
+  maxReplicas: 4 # a single-node kind cluster on a 15.6 GB machine
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      # React quickly to load, because the alternative is shedding it.
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+    scaleDown:
+      # Retreat slowly. Flapping replicas during a spiky load test costs more
+      # than the pod you would have saved, and every scale-down is a cold start
+      # for whoever lands on the next new pod.
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

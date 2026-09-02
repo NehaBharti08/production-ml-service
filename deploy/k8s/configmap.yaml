@@ -1,0 +1,33 @@
+# Non-secret runtime configuration.
+#
+# Only non-secret values live here. A ConfigMap is base64 at best and readable by
+# anything with get access to the namespace; anything sensitive belongs in a
+# Secret, and this service deliberately has none — it reads a public dataset and
+# serves a model with no credentials of its own.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: readmission-api-config
+  labels:
+    app: readmission-api
+data:
+  MLSERVICE_ENV: "local"
+
+  # Containers emit JSON, always. A human-readable console format is for a
+  # terminal; anything shipping logs to a collector needs them parseable, and
+  # switching format per environment is how you discover in an incident that
+  # production logs are the unparseable ones.
+  MLSERVICE_LOGGING__FORMAT: "json"
+  MLSERVICE_LOGGING__LEVEL: "INFO"
+
+  MLSERVICE_API__PORT: "8000"
+
+  # Deliberately empty on the demo cluster. There is no MLflow server in kind —
+  # the resource budget (§7 of the plan) does not allow the full stack and a
+  # cluster at the same time — so the API falls back to the artifact baked into
+  # the image at build time.
+  #
+  # That fallback is not a demo shortcut. It is the property that makes the
+  # rollback demo honest: serving does not hard-depend on the registry being up,
+  # so a registry outage cannot take the API down with it.
+  MLSERVICE_MLFLOW__TRACKING_URI: ""
