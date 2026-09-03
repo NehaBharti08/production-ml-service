@@ -317,13 +317,22 @@ undisclosed is worse than reading them here.
 | Latency profile | ⚠️ measured, but load generator was co-located — `remeasure_required: true` |
 | Canary rollout | ❌ configured, **never exercised** |
 | `kubectl rollout undo` | ❌ manifests and script written, **never run** |
-| Live public endpoint | ❌ not yet deployed |
+| Live public endpoint | ❌ **not deployed** — image, Space config and deploy workflow are written and the payload dry-runs clean; no HF token is configured, so it has never run |
 | End-to-end unattended retrain | ❌ triggers fire correctly on real evidence; the full loop has not run alone |
 
 The three ❌ items in the lower half share one cause: **Docker is not installed
 on the development machine.** Rather than pretend otherwise, every affected
 document carries its own "not verified" section, and
 `scripts/k8s_rollback_demo.sh` says `STATUS: written, NOT run` in its header.
+
+**Deploying the live endpoint.** Everything is in place except the credential:
+[`deploy/docker/Dockerfile.hf`](deploy/docker/Dockerfile.hf),
+[`deploy/hf-space/README.md`](deploy/hf-space/README.md) and
+[`.github/workflows/deploy-hf.yml`](.github/workflows/deploy-hf.yml). Add an HF
+write token as the `HF_TOKEN` repository secret, push the trained artifact to an
+HF Model repo, and dispatch the workflow. The model binary reaches the Space by
+download at startup and never enters git — the same artifact-store/runtime split
+the MLflow path uses.
 
 **Induced vs real drift.** Where drift is deliberately induced to demonstrate
 detection, every report carries `drift_origin: induced` and the docs say so. The
