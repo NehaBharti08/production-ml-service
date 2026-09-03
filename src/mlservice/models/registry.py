@@ -44,14 +44,47 @@ _SERVER_TIMEOUT_SECONDS = 3
 def server_reachable(uri: str, timeout: int = _SERVER_TIMEOUT_SECONDS) -> bool:
     """Cheap liveness probe so a dead server degrades instead of hanging.
 
-    Without this, mlflow retries internally and a training run appears to hang
-    for a minute before failing — which reads like a broken pipeline rather than
-    a missing service.
+    The DNS lookup is done separately and first, because **urlopen's timeout
+    does not cover name resolution**. Configs point at compose service names
+    like ``http://mlflow:5000``; off the compose network that name does not
+    resolve, and the lookup blocked for far longer than the socket timeout —
+    observed as a 15-second delay on every service start in Phase 3, and as a
+    multi-minute hang when the registry was queried from a script.
+
+    Resolving in a daemon thread bounds it: if the lookup has not returned by
+    the deadline the host is treated as unreachable and the thread is abandoned
+    rather than waited on.
     """
     if not uri or not uri.startswith("http"):
         return False
+
+    import socket
+    import threading
     import urllib.error
+    import urllib.parse
     import urllib.request
+
+    parsed = urllib.parse.urlparse(uri)
+    host, port = parsed.hostname, parsed.port or 80
+    if not host:
+        return False
+
+    resolved: list[bool] = []
+
+    def _resolve() -> None:
+        try:
+            socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+            resolved.append(True)
+        except OSError:
+            resolved.append(False)
+
+    thread = threading.Thread(target=_resolve, daemon=True)
+    thread.start()
+    thread.join(timeout)
+
+    if not resolved or not resolved[0]:
+        log.debug("registry_host_unresolvable", host=host, timeout_s=timeout)
+        return False
 
     try:
         with urllib.request.urlopen(f"{uri.rstrip('/')}/health", timeout=timeout) as r:

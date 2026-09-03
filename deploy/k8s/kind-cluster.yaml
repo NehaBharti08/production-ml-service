@@ -1,0 +1,22 @@
+# kind cluster for the rollout/rollback demo.
+#
+# One node, deliberately. A multi-node kind cluster is three more containers for
+# no added signal: the demo is about probes and rollout history, not scheduling
+# across nodes. On a 15.6 GB machine that also has to run Docker Desktop, the
+# extra nodes are the difference between a demo that runs and one that swaps.
+#
+# Run `docker compose down` before creating this cluster — the plan's resource
+# budget treats `full` and `k8s` as mutually exclusive profiles.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: mlservice
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # Maps the NodePort straight to localhost so the demo can curl a stable
+      # URL. `kubectl port-forward` dies when the pod it forwarded to is
+      # replaced — which is exactly what a rollout does, so the tool would break
+      # at the one moment the demo needs to keep observing.
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP

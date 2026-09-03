@@ -193,12 +193,38 @@ jobs:
       - name: Dashboard JSON is well formed
         run: uv run pytest tests/unit/test_observability.py -m unit
 
+  rollback:
+    name: rollback path
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked --all-groups
+
+      # A rollback path that has never been exercised is a plan, not a
+      # capability, and the moment you need it is the worst possible time to
+      # discover it does not work. This runs the real promote -> rollback cycle
+      # against a real SQLite-backed MLflow registry built in a temp directory:
+      # no server, no container, no dataset.
+      #
+      # The unit tests use a fake client, which is right for the logic and
+      # useless for this question. Both Phase 7 bugs lived precisely in that
+      # gap: an int/str version mismatch across two MLflow APIs, and a
+      # degenerate cycle that promoted the version already serving and reported
+      # success. This job is what would catch either coming back.
+      - name: Promote and roll back against a real registry
+        run: uv run pytest tests/integration/test_rollback_path.py -m integration -rs
+
   # Gathers the parallel jobs into one required check, so branch protection has
   # a single status to gate on instead of a list that changes with the matrix.
   ci-passed:
     name: CI passed
     runs-on: ubuntu-latest
-    needs: [quality, unit, contract, behavior, data-quality, observability]
+    needs: [quality, unit, contract, behavior, data-quality, observability, rollback]
     if: always()
     steps:
       - name: Fail if any job failed
