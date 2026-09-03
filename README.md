@@ -73,9 +73,129 @@ tree reaches ~100%, which is precisely why those datasets prove nothing.
 
 ---
 
+## The operations loop
+
+The model is one box in this diagram. Everything else is the project.
+
+```mermaid
+flowchart LR
+    subgraph serve["SERVE"]
+        API["FastAPI<br/>/v1/predict"]
+        LOG[("prediction log<br/>NDJSON")]
+        API --> LOG
+    end
+
+    subgraph observe["OBSERVE"]
+        PROM["Prometheus"]
+        GRAF["Grafana<br/>3 dashboards"]
+        PROM --> GRAF
+    end
+
+    subgraph detect["DETECT"]
+        DRIFT["drift<br/>PSI vs empirical null"]
+        PERF["performance<br/>on matured labels"]
+    end
+
+    subgraph decide["DECIDE"]
+        TRIG{"4 triggers"}
+        GATES{"6 gates<br/>ALL must pass"}
+    end
+
+    subgraph act["ACT"]
+        PROMOTE["promote<br/>alias flip"]
+        ROLLBACK["rollback<br/>alias flip"]
+    end
+
+    API -.->|metrics| PROM
+    LOG --> DRIFT
+    LOG --> PERF
+    DRIFT --> TRIG
+    PERF --> TRIG
+    TRIG -->|fired| GATES
+    GATES -->|all pass| PROMOTE
+    GATES -->|any fail| BLOCK["BLOCKED<br/>incumbent keeps serving"]
+    PROMOTE --> API
+    ROLLBACK --> API
+
+    style GATES fill:#c62828,stroke:#8e0000,color:#fff
+    style BLOCK fill:#ef6c00,stroke:#b53d00,color:#fff
+    style ROLLBACK fill:#2e7d32,stroke:#1b5e20,color:#fff
+```
+
+Two asymmetries in that diagram are deliberate:
+
+- **Triggering is permissive; promoting is strict.** Any one trigger starts a
+  retrain, but every gate must pass to ship it. Training a model is cheap and
+  reversible; serving one is neither.
+- **Rollback is ungated.** Promotion passes six checks; rollback passes none. A
+  safety mechanism that can be blocked by the checks it exists to escape is not
+  a safety mechanism.
+
+---
+
+## What this proves — with evidence, not claims
+
+### A better-ranking model is refused because it calibrates worse
+
+This is the whole thesis in one command. The challenger below has a **higher
+PR-AUC** than the incumbent — most promotion pipelines would ship it:
+
+```console
+$ uv run mlservice retrain gates --challenger challenger.json --incumbent champion.json
+
+  BLOCKED  --  blocked by: calibration
+        pass  performance    PR-AUC 0.1434 >= 0.1184 (incumbent 0.1234 - 0.005 margin)
+        FAIL  calibration    Brier ratio 1.1500 > 1.02 AND ECE 0.0800 > 0.05
+        pass  subgroup       worst gap -0.2323 vs incumbent -0.2323 (+0.0% relative)
+        pass  behavioral     20/20 behavioural tests passed
+        pass  operational    artifact loads and matches the serving contract
+        pass  data_quality   training data passed its quality checks
+```
+
+For a health-adjacent task, a probability you cannot trust cannot support a
+decision. If the model says 30% it should be right about 30% of the time — and
+when that breaks, everyone downstream who reasoned about the number is wrong in
+a way no ranking metric will show.
+
+`promote` then refuses the blocked decision, and the serving alias is untouched.
+There is deliberately **no `--force`**: a promote command with a bypass is a
+promote command with no gates.
+
+### The rollback path is exercised, not asserted
+
+```console
+$ uv run mlservice retrain verify-rollback
+
+        seed      -> 1     alias now: 1
+        promote   -> 2     alias now: 2
+        rollback  -> 1     alias now: 1
+  VERIFIED  alias moved 1 -> 2 and back to 1
+```
+
+This runs as a **required CI check** against a real MLflow registry.
+
+It exists in this form because the first version of it passed while proving
+nothing: it promoted the version that was *already serving* and reported
+`promote 2 → 2, rollback 2 → 2, VERIFIED: True`. The alias never moved. A
+verification that cannot fail is decoration — see
+[ADR 0008](docs/DECISIONS/0008-promotion-gates-and-rollback.md).
+
+### Drift thresholds are derived from data, not chosen
+
+Arbitrary thresholds are the most common sign that monitoring was copied rather
+than reasoned about. Each of the 43 per-feature thresholds here is the **99th
+percentile of that feature's PSI between stable training windows**, clamped to
+[0.10, 0.25].
+
+So every threshold answers *"why this number?"* with **"because this feature
+moved that much between windows we accepted only 1% of the time"** — see
+[ADR 0007](docs/DECISIONS/0007-drift-thresholds.md).
+
+---
+
 ## Status
 
-🚧 **Phase 5 of 8 complete.** This README fills in as the phases land.
+**Phases 0–7 of 8 complete.** Phase 8 is the docs and the live endpoint.
 
 | Phase | Scope | State |
 |:--|:--|:--|
@@ -85,9 +205,13 @@ tree reaches ~100%, which is precisely why those datasets prove nothing.
 | 3 | FastAPI serving + prediction log | ✅ done |
 | 4 | Tests, behaviour suite, CI, load test | ✅ done |
 | 5 | Prometheus + Grafana observability | ✅ done |
-| 6 | Drift detection and monitoring | ⬜ |
-| 7 | Retraining, promotion gates, rollback | ⬜ |
-| 8 | Ship — runbook, live endpoint, docs | ⬜ |
+| 6 | Drift detection with calibrated thresholds | ✅ done |
+| 7 | Retraining, promotion gates, tested rollback | ✅ done |
+| 8 | Ship — runbook, live endpoint, docs | 🚧 in progress |
+
+**262 tests** — unit, contract, behaviour, data-quality, and a rollback cycle
+against a real registry. Lint, format, types and a Trivy container scan gate
+every PR.
 
 ---
 
@@ -101,8 +225,28 @@ uv run mlservice doctor      # verify the environment is fit to run
 uv run mlservice config      # show fully resolved configuration
 ```
 
-Docker, `kind` and `kubectl` are needed from Phase 3 onward — see
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Reproduce the whole pipeline from scratch:
+
+```bash
+uv run mlservice data download        # fetch from UCI, verify the checksum
+uv run mlservice data audit           # regenerate docs/DATA_AUDIT.md
+uv run mlservice train run            # train, calibrate, evaluate, register
+uv run pytest                         # every suite
+```
+
+Drive the operations loop:
+
+```bash
+uv run mlservice monitor check        # drift on the latest window
+uv run mlservice retrain check        # which triggers fired, and on what evidence
+uv run mlservice retrain evidence     # assemble what the gates judge
+uv run mlservice retrain gates ...    # run all six; exit 1 blocks
+uv run mlservice retrain verify-rollback   # exercise a real promote -> rollback
+uv run mlservice retrain history      # the audit trail
+```
+
+Docker, `kind` and `kubectl` are needed for the serving stack, dashboards and
+the rollout demo — see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ---
 
@@ -139,6 +283,52 @@ than promised in prose:
   provenance tag (`MEASURED`, `DERIVED`, `STANDARD`, `PLACEHOLDER`) and a
   written justification.
 - **No patient-level data is ever committed.** See [data/README.md](data/README.md).
+
+---
+
+## Honest limitations
+
+Stated plainly, because a reviewer will find these anyway and finding them
+undisclosed is worse than reading them here.
+
+**About the data and model**
+
+- **The temporal split rests on a proxy.** This dataset has no timestamp column.
+  `encounter_id` ordering was *verified* rather than assumed — 5 of 8 signals
+  shift monotonically, and the 7.7× rosiglitazone discontinuity reproduces the
+  2007 Avandia withdrawal — but it remains a proxy, not a date.
+- **Single-institution, 1999–2008 data.** Nothing here transfers to a modern
+  hospital population without revalidation.
+- **The model is modest and meant to be.** PR-AUC 0.123 against a 7.6%
+  prevalence, ROC-AUC 0.616. That is near the published ceiling for this task.
+  Chasing it higher would invert the point of the project.
+- **Subgroup disparities exist and are not fixed.** The worst recall gap is
+  -0.232. The subgroup gate prevents it *widening*; it does not claim fairness.
+  The [model card](docs/MODEL_CARD.md) reports every group.
+- **No clinical validation of any kind.** See the disclaimer at the top.
+
+**About what has and has not been run**
+
+| Claim | Status |
+|:--|:--|
+| Promotion gates block a bad model | ✅ demonstrated on the real champion |
+| Model rollback (registry alias flip) | ✅ verified in CI against a real registry |
+| Drift detection on real and induced drift | ✅ both, with `drift_origin` labelled |
+| Latency profile | ⚠️ measured, but load generator was co-located — `remeasure_required: true` |
+| Canary rollout | ❌ configured, **never exercised** |
+| `kubectl rollout undo` | ❌ manifests and script written, **never run** |
+| Live public endpoint | ❌ not yet deployed |
+| End-to-end unattended retrain | ❌ triggers fire correctly on real evidence; the full loop has not run alone |
+
+The three ❌ items in the lower half share one cause: **Docker is not installed
+on the development machine.** Rather than pretend otherwise, every affected
+document carries its own "not verified" section, and
+`scripts/k8s_rollback_demo.sh` says `STATUS: written, NOT run` in its header.
+
+**Induced vs real drift.** Where drift is deliberately induced to demonstrate
+detection, every report carries `drift_origin: induced` and the docs say so. The
+genuine 1999→2008 shift in medication mix and specialty recording is labelled
+`real`. The two are never conflated.
 
 ---
 
