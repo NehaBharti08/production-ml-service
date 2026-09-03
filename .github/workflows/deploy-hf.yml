@@ -1,0 +1,136 @@
+# Deploy the Hugging Face Space.
+#
+# Runs on a version tag, or on demand. It assembles a Space repo from this one
+# rather than pushing this repo wholesale, because a Space needs a specific
+# shape — Dockerfile and README.md at the root, frontmatter declaring app_port —
+# and because most of this repository has no business in a serving deployment.
+#
+# What is deliberately NOT pushed: tests, notebooks, deploy/, docs/, reports/,
+# and above all data/ and models/. The model binary reaches the Space by being
+# downloaded at runtime from an HF Model repo, never by being committed.
+#
+# STATUS: never run. There is no HF token configured on this repository yet, so
+# this workflow has not executed and the Space does not exist. It is committed
+# as the intended deployment; the README says the endpoint is not live rather
+# than implying it is.
+name: Deploy HF Space
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      space_id:
+        description: "HF Space, as owner/name"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-hf
+  cancel-in-progress: true
+
+env:
+  # Overridable at dispatch; this is the default target.
+  SPACE_ID: ${{ inputs.space_id || 'NehaBharti08/readmission-risk-service' }}
+
+jobs:
+  deploy:
+    name: push to the Space
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Fail early if no token is configured
+        # A clear failure here beats an authentication error 40 lines into a
+        # git push, where it reads like a broken workflow rather than a missing
+        # secret.
+        run: |
+          if [ -z "${{ secrets.HF_TOKEN }}" ]; then
+            echo "::error::HF_TOKEN is not set. Add a write token at"
+            echo "::error::Settings -> Secrets and variables -> Actions -> HF_TOKEN"
+            exit 1
+          fi
+
+      - name: Assemble the Space repo
+        run: |
+          set -euo pipefail
+          mkdir -p space
+          # Only what the service needs to run.
+          cp -r src configs ui pyproject.toml uv.lock space/
+          mkdir -p space/scripts
+          cp scripts/fetch_model.py space/scripts/
+          cp deploy/docker/Dockerfile.hf space/Dockerfile
+          cp deploy/hf-space/README.md    space/README.md
+
+          # A .gitignore inside the Space is a last line of defence, not the
+          # first: nothing below is copied above. Belt and braces, because the
+          # cost of leaking a model binary or a data file is asymmetric.
+          cat > space/.gitignore <<'IGNORE'
+          data/
+          models/
+          mlruns/
+          reports/
+          *.csv
+          *.parquet
+          *.joblib
+          *.pkl
+          IGNORE
+
+          echo "Space contents:"
+          find space -maxdepth 2 -not -path '*/.git/*' | sort | head -30
+
+      - name: Refuse to deploy if anything forbidden slipped in
+        # The same audit run before the first push to GitHub, applied here.
+        # This workflow is the one place a data file could plausibly escape.
+        run: |
+          set -euo pipefail
+          if find space -type f \( -name '*.csv' -o -name '*.parquet' \
+               -o -name '*.joblib' -o -name '*.pkl' -o -name '.env' \) | grep -q .; then
+            echo "::error::forbidden file in the Space payload:"
+            find space -type f \( -name '*.csv' -o -name '*.parquet' \
+              -o -name '*.joblib' -o -name '*.pkl' -o -name '.env' \)
+            exit 1
+          fi
+          echo "clean: no data, model binaries or secrets in the payload"
+
+      - name: Push
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd space
+          git init -q
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "deploy: ${{ github.ref_name }} (${{ github.sha }})"
+          # force: the Space history is a deployment artifact, not a record.
+          # This repository is the record.
+          git push --force \
+            "https://user:${HF_TOKEN}@huggingface.co/spaces/${SPACE_ID}" \
+            main
+
+      - name: Smoke-test the live Space
+        # A deploy that is not verified is a deploy you find out about from
+        # someone else. The Space needs time to build, so this polls rather
+        # than asserting immediately.
+        run: |
+          set -uo pipefail
+          URL="https://$(echo "${SPACE_ID}" | tr '/' '-' | tr '[:upper:]' '[:lower:]').hf.space"
+          echo "polling ${URL}/health/ready"
+          for i in $(seq 1 40); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' "${URL}/health/ready" || echo 000)
+            echo "  attempt ${i}: ${CODE}"
+            if [ "${CODE}" = "200" ]; then
+              echo "READY"
+              curl -s "${URL}/v1/model" | head -c 400
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::warning::Space did not report ready within 10 minutes."
+          echo "::warning::A 503 means no model loaded — check the Space logs for [fetch_model] lines."
+          exit 1

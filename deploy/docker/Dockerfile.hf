@@ -1,0 +1,121 @@
+# =============================================================================
+# Hugging Face Space image.
+#
+# Deliberately a near-copy of Dockerfile.api rather than a shared base, and the
+# duplication is the point: the two images have genuinely different constraints,
+# and a shared parent would force one of them to compromise.
+#
+#   Dockerfile.api  -> compose and kind. Port 8000, runs as uid 1000 'app',
+#                      model comes from the MLflow registry with a baked-in
+#                      local artifact as fallback.
+#   Dockerfile.hf   -> a Space. Port 7860 (HF requires it declared in the
+#                      Space README frontmatter), model is DOWNLOADED at
+#                      startup from an HF Model repo.
+#
+# Why downloaded rather than baked in: the model binary is gitignored and must
+# stay that way, but a Space builds from a git repo. So the artifact store and
+# the runtime are separated —
+#
+#     HF Model repo = artifact store        HF Space = runtime
+#
+# which is the same registry -> runtime split the MLflow path uses, expressed
+# with the tools a free tier actually provides.
+#
+# IMPORTANT: this image has never been built. Docker is not installed on the
+# development machine. It is committed as the intended build, and the README
+# says so rather than implying a deployment that has not happened.
+# =============================================================================
+
+# --- Builder -----------------------------------------------------------------
+FROM python:3.11-slim-bookworm AS builder
+
+COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /usr/local/bin/uv
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --locked --no-install-project --no-dev --group serve
+
+COPY src/ ./src/
+RUN uv sync --locked --no-dev --group serve
+
+# Same purge as the API image, for the same reason: a package that is not
+# installed cannot be a CVE finding. See Dockerfile.api for the two HIGH CVEs
+# that made this necessary rather than tidy.
+RUN SITE=$(/app/.venv/bin/python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])") \
+    && rm -rf \
+        "$SITE"/setuptools "$SITE"/setuptools-*.dist-info \
+        "$SITE"/pkg_resources \
+        "$SITE"/wheel "$SITE"/wheel-*.dist-info \
+        "$SITE"/jaraco* \
+        "$SITE"/_distutils_hack "$SITE"/distutils-precedence.pth \
+        "$SITE"/pip "$SITE"/pip-*.dist-info \
+    && /app/.venv/bin/python -c "import fastapi, sklearn, huggingface_hub; print('venv imports OK')"
+
+
+# --- Runtime -----------------------------------------------------------------
+FROM python:3.11-slim-bookworm AS runtime
+
+# HF Spaces run the container as uid 1000 and mount a writable /home/user.
+# Matching that exactly avoids the most common Space failure: a container that
+# builds fine and then cannot write anywhere at runtime.
+RUN useradd --uid 1000 --create-home --shell /bin/bash user
+
+RUN SITE=$(python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])") \
+    && rm -rf \
+        "$SITE"/setuptools "$SITE"/setuptools-*.dist-info \
+        "$SITE"/pkg_resources \
+        "$SITE"/wheel "$SITE"/wheel-*.dist-info \
+        "$SITE"/jaraco* \
+        "$SITE"/_distutils_hack "$SITE"/distutils-precedence.pth \
+        "$SITE"/pip "$SITE"/pip-*.dist-info
+
+ENV PATH="/home/user/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    MLSERVICE_ENV=hf \
+    MLSERVICE_LOGGING__FORMAT=json \
+    MLSERVICE_API__PORT=7860 \
+    HF_HOME=/home/user/.cache/huggingface
+
+# No MLflow server exists from a Space, and pointing at one that does not
+# resolve costs a DNS timeout on every model load. Empty means "go straight to
+# the local artifact", which is what fetch_model.py will have written.
+ENV MLSERVICE_MLFLOW__TRACKING_URI=""
+
+WORKDIR /home/user/app
+
+COPY --from=builder --chown=user:user /app/.venv ./.venv
+COPY --chown=user:user src/     ./src/
+COPY --chown=user:user configs/ ./configs/
+COPY --chown=user:user ui/      ./ui/
+COPY --chown=user:user scripts/fetch_model.py ./scripts/fetch_model.py
+
+RUN mkdir -p /home/user/app/data/monitoring /home/user/app/logs /home/user/app/models \
+             /home/user/.cache/huggingface \
+    && chown -R user:user /home/user
+
+USER user
+
+RUN /home/user/app/.venv/bin/python -c \
+    "import fastapi, uvicorn, sklearn, mlservice; print('runtime imports OK')"
+
+# 7860 is not a preference. HF Spaces routes to the port declared as app_port in
+# the Space README frontmatter, and the two must agree or the Space shows a
+# permanent "connection errored out".
+EXPOSE 7860
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:7860/health/ready').status==200 else 1)"
+
+# Fetch, then exec. `exec` replaces the shell so uvicorn receives SIGTERM
+# directly and the graceful shutdown actually runs — the same reason
+# Dockerfile.api uses the exec form of CMD.
+#
+# fetch_model.py never exits non-zero: a Space with no model starts and reports
+# 503 on /health/ready, which is debuggable. A crash loop is not.
+CMD ["/bin/sh", "-c", "python scripts/fetch_model.py; exec uvicorn mlservice.api.main:app --host 0.0.0.0 --port 7860 --timeout-graceful-shutdown 20 --no-access-log"]
