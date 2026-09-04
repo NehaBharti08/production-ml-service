@@ -193,6 +193,37 @@ moved that much between windows we accepted only 1% of the time"** — see
 
 ---
 
+## The dashboards
+
+Captured from a cold `docker compose up` — provisioned automatically, no manual
+clicking, against real traffic from `scripts/seed_predictions.py`.
+
+### Golden signals — readable in ten seconds
+
+![Golden signals dashboard](docs/images/golden-signals.png)
+
+Four panels, traffic-light colouring, no jargon. Traffic, p99 latency, 5xx error
+rate, saturation against the measured knee.
+
+### Model health
+
+![Model health dashboard](docs/images/model-health.png)
+
+Note the **flagged rate of 26%** against a trained flagged rate of 32%. That
+number is a load-bearing check, not decoration: it is what the model does at its
+own operating point of 0.1011. When the service was accidentally serving the
+0.5 config placeholder, this panel read ~0% — a screening model flagging nobody
+while every other signal stayed green.
+
+### Drift
+
+![Drift dashboard](docs/images/drift.png)
+
+Per-feature PSI against per-feature thresholds, each derived from an empirical
+null rather than chosen.
+
+---
+
 ## Status
 
 **Phases 0–7 of 8 complete.** Phase 8 is the docs and the live endpoint.
@@ -315,6 +346,8 @@ undisclosed is worse than reading them here.
 | Model rollback (registry alias flip) | ✅ verified in CI against a real registry |
 | Drift detection on real and induced drift | ✅ both, with `drift_origin` labelled |
 | Latency profile | ⚠️ measured, but load generator was co-located — `remeasure_required: true` |
+| Container actually serves predictions | ✅ verified end-to-end; regression-tested in CI |
+| Dashboards provision from a cold start | ✅ all three, screenshots above |
 | Canary rollout | ❌ configured, **never exercised** |
 | `kubectl rollout undo` | ❌ manifests and script written, **never run** |
 | Live public endpoint | ❌ **not deployed** — image, Space config and deploy workflow are written and the payload dry-runs clean; no HF token is configured, so it has never run |
