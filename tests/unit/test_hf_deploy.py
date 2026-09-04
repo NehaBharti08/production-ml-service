@@ -46,8 +46,12 @@ class TestSpaceFrontmatter:
         assert exposed, "Dockerfile.hf must EXPOSE a port"
         assert int(exposed.group(1)) == declared
 
-        served = re.search(r"--port\s+(\d+)", dockerfile)
-        assert served, "the CMD must pass --port"
+        # The CMD reads the port from the environment so ONE image serves both
+        # a Space (app_port 7860, PORT unset) and Render (PORT injected). The
+        # property under test is that the DEFAULT still matches the frontmatter
+        # — a Space would otherwise route to a port nothing listens on.
+        served = re.search(r"--port \$\{PORT:-(\d+)\}", dockerfile)
+        assert served, "the CMD must read the port from ${PORT} with a default"
         assert int(served.group(1)) == declared
 
     def test_carries_the_non_clinical_disclaimer(self) -> None:

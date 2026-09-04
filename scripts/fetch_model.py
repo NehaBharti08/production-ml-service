@@ -45,6 +45,42 @@ def target_path() -> Path:
     return Path(get_settings().paths.models) / "champion" / "model.joblib"
 
 
+def _fetch_contract(repo: str, directory: Path, token: str | None) -> None:
+    """Download ``metadata.json`` — the artifact's serving contract.
+
+    **Without this the model loads and is quietly wrong.** The threshold falls
+    back to the config placeholder of 0.5 against a model tuned to 0.1011, and
+    the service returns 200 with a plausible probability while flagging nobody.
+
+    That bug has now appeared five times in this project, in five different
+    places. It reappeared *here* the first time this image was run against the
+    real model repo: the sidecar mechanism existed and worked, and the fetcher
+    simply never brought the sidecar along. A contract that travels with the
+    artifact only helps if everything that moves the artifact moves both.
+
+    A missing contract is loud rather than fatal. The service can still serve —
+    and an operator who reads one line of logs can see exactly why the
+    threshold looks wrong — but nothing about it is silent.
+    """
+    from huggingface_hub import hf_hub_download
+
+    try:
+        path = hf_hub_download(repo_id=repo, filename="metadata.json", token=token)
+        (directory / "metadata.json").write_bytes(Path(path).read_bytes())
+        print(f"[fetch_model] wrote {directory / 'metadata.json'}", file=sys.stderr)
+    except Exception as exc:
+        print(
+            f"[fetch_model] WARNING: no metadata.json in {repo} ({type(exc).__name__}).",
+            file=sys.stderr,
+        )
+        print(
+            "[fetch_model] WARNING: the serving contract is MISSING, so the "
+            "decision threshold falls back to config and predictions will be "
+            "labelled against the wrong operating point.",
+            file=sys.stderr,
+        )
+
+
 def main() -> int:
     repo = os.environ.get(REPO_ENV, "").strip()
     if not repo:
@@ -68,13 +104,15 @@ def main() -> int:
         destination = target_path()
         destination.parent.mkdir(parents=True, exist_ok=True)
 
-        # Copy rather than symlink: the hub cache is a separate layer in the
-        # Space's ephemeral disk, and a dangling symlink fails at load time
+        # Copy rather than symlink: the hub cache is a separate layer on the
+        # host's ephemeral disk, and a dangling symlink fails at load time
         # rather than here, where the error would still be readable.
         destination.write_bytes(Path(downloaded).read_bytes())
 
         size_kb = round(destination.stat().st_size / 1e3)
         print(f"[fetch_model] wrote {destination} ({size_kb} kB)", file=sys.stderr)
+
+        _fetch_contract(repo, destination.parent, token)
         return 0
     except Exception as exc:
         # Deliberately swallowed. See the module docstring: an unready service
