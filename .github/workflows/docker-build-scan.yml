@@ -126,6 +126,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifact/champion
+          # The image runs as uid 1000 ('app'), and on a GitHub runner this
+          # directory belongs to the runner user — so the container cannot write
+          # into the bind mount and joblib.dump fails with EACCES. Docker Desktop
+          # on Windows does not enforce that ownership, which is exactly why this
+          # step passed locally and failed here on its first run.
+          chmod 777 artifact/champion
           docker run --rm -v "${PWD}/artifact:/out" --entrypoint python mlservice-api:ci -c "
           import json, joblib
           from sklearn.dummy import DummyClassifier
