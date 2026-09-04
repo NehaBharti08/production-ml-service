@@ -87,14 +87,27 @@ jobs:
           api.create_repo(model_id, repo_type="model", private=private, exist_ok=True)
           print(f"model repo ready: {model_id}")
 
-          api.create_repo(
-              space_id,
-              repo_type="space",
-              space_sdk="docker",
-              private=private,
-              exist_ok=True,
-          )
-          print(f"space ready: {space_id}")
+          # Space creation is allowed to fail without failing the run.
+          #
+          # On 2026-09-04 this returned 402 Payment Required for a free account
+          # while the model repo above was created without complaint. The
+          # project plan flagged exactly this as an unconfirmed risk; it is now
+          # confirmed. The model artifact is useful on its own, so uploading it
+          # must not be blocked by a Space that cannot be created.
+          space_ok = False
+          try:
+              api.create_repo(
+                  space_id,
+                  repo_type="space",
+                  space_sdk="docker",
+                  private=private,
+                  exist_ok=True,
+              )
+              space_ok = True
+              print(f"space ready: {space_id}")
+          except Exception as exc:
+              print(f"::warning::could not create the Space: {type(exc).__name__}: {exc}")
+              print("::warning::the model repo is unaffected; see the run summary")
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
               fh.write(f"owner={owner}\n")
@@ -196,6 +209,7 @@ jobs:
           PY
 
       - name: Point the Space at the Model repo
+        if: steps.hf.outputs.space_ok == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           SPACE_ID: ${{ steps.hf.outputs.space_id }}
@@ -225,5 +239,13 @@ jobs:
             echo "| Model repo | https://huggingface.co/${{ steps.hf.outputs.model_id }} |"
             echo "| Space | https://huggingface.co/spaces/${{ steps.hf.outputs.space_id }} |"
             echo
-            echo "The Space is created but **empty**. Run **Deploy HF Space** next."
+            if [ "${{ steps.hf.outputs.space_ok }}" = "true" ]; then
+              echo "The Space is created but **empty**. Run **Deploy HF Space** next."
+            else
+              echo "**The Space was NOT created** - Hugging Face returned"
+              echo "402 Payment Required. The model repo above is fine and holds"
+              echo "the artifact. Create the Space by hand at"
+              echo "<https://huggingface.co/new-space> (SDK: Docker), or use the"
+              echo "documented Fly.io fallback."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
