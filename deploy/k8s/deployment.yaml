@@ -118,6 +118,13 @@ spec:
               mountPath: /tmp
             - name: logs
               mountPath: /app/logs
+            # Without this the pod runs, stays healthy on liveness, and never
+            # becomes Ready — readiness correctly refusing traffic to a service
+            # with no model. Verified: that is exactly what happened the first
+            # time these manifests were applied.
+            - name: model
+              mountPath: /app/models
+              readOnly: true
 
       volumes:
         # readOnlyRootFilesystem means anything that writes needs an explicit
@@ -128,3 +135,11 @@ spec:
           emptyDir: {}
         - name: logs
           emptyDir: {}
+
+        # Supplied by the node, which kind maps from the host (see
+        # kind-cluster.yaml extraMounts). The image carries no model, so that
+        # promotion stays an alias flip instead of a rebuild.
+        - name: model
+          hostPath:
+            path: /artifacts/models
+            type: Directory

@@ -291,6 +291,7 @@ the rollout demo — see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 | [docs/LOAD_TEST_REPORT.md](docs/LOAD_TEST_REPORT.md) | Measured latency profile and where the service breaks |
 | [docs/RETRAINING_POLICY.md](docs/RETRAINING_POLICY.md) | Triggers, promotion gates, rollback |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | Incident response — what to do when it breaks |
+| [docs/K8S_ROLLBACK_DEMO.md](docs/K8S_ROLLBACK_DEMO.md) | Captured output from a real rollout failure and rollback |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System diagram and component responsibilities |
 | [docs/DECISIONS/](docs/DECISIONS/) | Architecture decision records |
 
@@ -349,7 +350,7 @@ undisclosed is worse than reading them here.
 | Container actually serves predictions | ✅ verified end-to-end; regression-tested in CI |
 | Dashboards provision from a cold start | ✅ all three, screenshots above |
 | Canary rollout | ❌ configured, **never exercised** |
-| `kubectl rollout undo` | ❌ manifests and script written, **never run** |
+| `kubectl rollout undo` | ✅ **run on kind** — broken deploy contained, 12/12 probes served, [captured output](docs/K8S_ROLLBACK_DEMO.md) |
 | Live public endpoint | ❌ **not deployed** — image, Space config and deploy workflow are written and the payload dry-runs clean; no HF token is configured, so it has never run |
 | End-to-end unattended retrain | ❌ triggers fire correctly on real evidence; the full loop has not run alone |
 

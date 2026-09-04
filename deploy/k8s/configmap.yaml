@@ -23,11 +23,17 @@ data:
   MLSERVICE_API__PORT: "8000"
 
   # Deliberately empty on the demo cluster. There is no MLflow server in kind —
-  # the resource budget (§7 of the plan) does not allow the full stack and a
-  # cluster at the same time — so the API falls back to the artifact baked into
-  # the image at build time.
+  # the resource budget does not allow the full stack and a cluster at once —
+  # so the API serves from its local artifact.
   #
-  # That fallback is not a demo shortcut. It is the property that makes the
-  # rollback demo honest: serving does not hard-depend on the registry being up,
-  # so a registry outage cannot take the API down with it.
+  # That artifact is MOUNTED, not baked into the image. This comment previously
+  # claimed the opposite, and the claim was false: nothing was ever copied in,
+  # and .dockerignore excludes models/ on purpose. The first time these
+  # manifests were applied, both pods ran, passed liveness, and never became
+  # Ready — readiness correctly refusing traffic to a service with no model.
+  #
+  # Keeping the model out of the image is what makes promotion an alias flip
+  # rather than a rebuild and redeploy. The fallback property still holds:
+  # serving does not hard-depend on the registry, so a registry outage cannot
+  # take the API down with it.
   MLSERVICE_MLFLOW__TRACKING_URI: ""
