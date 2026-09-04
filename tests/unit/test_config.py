@@ -7,6 +7,9 @@ the mistake surfaces much later as a metric nobody can explain.
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 
@@ -191,3 +194,35 @@ def _blocks_without_provenance(root: dict) -> list[str]:
 
 def _provenance_values(root: dict) -> list[str]:
     return [b["provenance"] for _, b in _walk_blocks(root) if "provenance" in b]
+
+
+class TestUnrelatedEnvFileVariables:
+    """A .env holding another tool's credential must not break startup.
+
+    A .env file is shared ground: it legitimately carries secrets for other
+    tools. With ``extra="forbid"`` at the Settings level, one unrelated line —
+    an HF token, an API key — made the whole service refuse to start, and the
+    pydantic ValidationError printed the offending VALUE. So an unrelated
+    secret both broke the service and leaked itself into the traceback.
+
+    Observed, not hypothesised: it happened the moment a Hugging Face token was
+    added to .env during Phase 8.
+    """
+
+    def test_an_unrelated_variable_is_ignored(self, env: Any, tmp_path: Path) -> None:
+        env(HF_TOKEN="hf_not_a_real_token", SOME_OTHER_TOOL_KEY="whatever")
+        settings = get_settings()
+        assert settings.env  # loads at all, which is the whole point
+
+    def test_a_mistyped_nested_key_is_still_rejected(self, env: Any) -> None:
+        """Typo protection must survive the fix. A section still forbids extras."""
+        # The env fixture resolves settings eagerly, so the raise happens
+        # inside it rather than on a later call. Either way the typo is
+        # rejected, which is the property under test.
+        with pytest.raises(ValidationError):
+            env(MLSERVICE_API__PROT="9999")
+
+    def test_a_mistyped_root_key_is_still_reported(self, env: Any) -> None:
+        """stray_env_vars covers what section-level validation structurally cannot."""
+        env(MLSERVICE_ENVIRONMENT="prod")
+        assert "MLSERVICE_ENVIRONMENT" in stray_env_vars()

@@ -1,5 +1,10 @@
 # =============================================================================
-# Hugging Face Space image.
+# Public demo image - Hugging Face Space OR Render.
+#
+# Named .hf for historical reasons; it now targets Render, because HF began
+# requiring a PRO subscription for Docker Spaces (verified 2026-09-04, a
+# 402 straight from their API). The image is identical either way - only the
+# port differs, and that is read from the environment.
 #
 # Deliberately a near-copy of Dockerfile.api rather than a shared base, and the
 # duplication is the point: the two images have genuinely different constraints,
@@ -21,9 +26,7 @@
 # which is the same registry -> runtime split the MLflow path uses, expressed
 # with the tools a free tier actually provides.
 #
-# IMPORTANT: this image has never been built. Docker is not installed on the
-# development machine. It is committed as the intended build, and the README
-# says so rather than implying a deployment that has not happened.
+# This image is built and smoke-tested locally before every deploy.
 # =============================================================================
 
 # --- Builder -----------------------------------------------------------------
@@ -74,7 +77,7 @@ RUN SITE=$(python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])"
         "$SITE"/_distutils_hack "$SITE"/distutils-precedence.pth \
         "$SITE"/pip "$SITE"/pip-*.dist-info
 
-ENV PATH="/home/user/app/.venv/bin:$PATH" \
+ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     MLSERVICE_ENV=hf \
@@ -87,21 +90,30 @@ ENV PATH="/home/user/app/.venv/bin:$PATH" \
 # the local artifact", which is what fetch_model.py will have written.
 ENV MLSERVICE_MLFLOW__TRACKING_URI=""
 
-WORKDIR /home/user/app
+# /app in BOTH stages, deliberately.
+#
+# uv records the project's location inside the venv when it installs it, so
+# building at /app and running at /home/user/app leaves that path dangling
+# and `import mlservice` fails with ModuleNotFoundError - after a build that
+# otherwise looks completely healthy. Caught the first time this image was
+# ever built. /home/user still exists and stays writable for the HF cache.
+WORKDIR /app
 
-COPY --from=builder --chown=user:user /app/.venv ./.venv
+COPY --from=builder --chown=user:user /app/.venv /app/.venv
 COPY --chown=user:user src/     ./src/
 COPY --chown=user:user configs/ ./configs/
 COPY --chown=user:user ui/      ./ui/
 COPY --chown=user:user scripts/fetch_model.py ./scripts/fetch_model.py
 
-RUN mkdir -p /home/user/app/data/monitoring /home/user/app/logs /home/user/app/models \
-             /home/user/.cache/huggingface \
-    && chown -R user:user /home/user
+# The service writes here: prediction log, app logs, and the artifact that
+# fetch_model.py downloads at boot. WORKDIR is /app, so these must be /app -
+# creating them under /home/user/app left the real paths absent.
+RUN mkdir -p /app/data/monitoring /app/logs /app/models /home/user/.cache/huggingface \
+    && chown -R user:user /app /home/user
 
 USER user
 
-RUN /home/user/app/.venv/bin/python -c \
+RUN /app/.venv/bin/python -c \
     "import fastapi, uvicorn, sklearn, mlservice; print('runtime imports OK')"
 
 # 7860 is not a preference. HF Spaces routes to the port declared as app_port in
@@ -110,7 +122,7 @@ RUN /home/user/app/.venv/bin/python -c \
 EXPOSE 7860
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:7860/health/ready').status==200 else 1)"
+    CMD python -c "import os,urllib.request,sys; p=os.environ.get('PORT','7860'); sys.exit(0 if urllib.request.urlopen(f'http://localhost:{p}/health/ready').status==200 else 1)"
 
 # Fetch, then exec. `exec` replaces the shell so uvicorn receives SIGTERM
 # directly and the graceful shutdown actually runs — the same reason
@@ -118,4 +130,13 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
 #
 # fetch_model.py never exits non-zero: a Space with no model starts and reports
 # 503 on /health/ready, which is debuggable. A crash loop is not.
-CMD ["/bin/sh", "-c", "python scripts/fetch_model.py; exec uvicorn mlservice.api.main:app --host 0.0.0.0 --port 7860 --timeout-graceful-shutdown 20 --no-access-log"]
+# ${PORT:-7860} rather than a hardcoded port, so ONE image serves both hosts:
+#
+#   HF Space -> routes to the port declared as app_port in the Space README,
+#               which is 7860; PORT is unset, so the default applies.
+#   Render   -> injects PORT (10000 by default) and routes to it.
+#
+# The plan promised this image would be "portable either way". Hardcoding 7860
+# would have made that false the moment it mattered — and it did matter: HF now
+# charges for Docker Spaces, so Render became the deployment target.
+CMD ["/bin/sh", "-c", "python scripts/fetch_model.py; exec uvicorn mlservice.api.main:app --host 0.0.0.0 --port ${PORT:-7860} --timeout-graceful-shutdown 20 --no-access-log"]

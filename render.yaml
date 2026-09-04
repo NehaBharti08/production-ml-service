@@ -1,0 +1,60 @@
+# Render Blueprint — the free-tier live endpoint.
+#
+# Render rather than a Hugging Face Space: HF began requiring a PRO
+# subscription for Docker Spaces, verified 2026-09-04 by a 402 straight from
+# their API —
+#
+#     "Static Spaces are free for everyone, but hosting Gradio and Docker
+#      Spaces on free cpu-basic requires a PRO subscription."
+#
+# The project's constraint is a $0 live endpoint with no managed cloud, so the
+# fallback the plan documented is now the primary. Nothing about the service
+# changes: the same Dockerfile serves both, reading its port from the
+# environment.
+#
+# Free plan, honestly:
+#   * spins down after 15 minutes idle; the next request pays a ~1 minute cold
+#     start. Acceptable for a portfolio demo, and stated in the README rather
+#     than left for a reviewer to discover as a hang.
+#   * 750 instance-hours per month, which one always-sleeping service will
+#     never approach.
+#   * no credit card required.
+services:
+  - type: web
+    name: readmission-risk-service
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./deploy/docker/Dockerfile.hf
+    dockerContext: .
+
+    # Readiness, not liveness. Render restarts on health-check failure, so
+    # pointing it at /health/ready would crash-loop a service whose model has
+    # not loaded — the exact mistake the Kubernetes manifests avoid. But Render
+    # has no separate traffic gate, so /health/live is the honest choice here:
+    # it answers "is the process alive", which is the only question a restart
+    # can act on.
+    healthCheckPath: /health/live
+
+    envVars:
+      # Where the artifact comes from. The model binary is gitignored and stays
+      # that way; the service downloads it at boot, which is the same
+      # artifact-store/runtime split the MLflow path uses.
+      - key: HF_MODEL_REPO
+        value: nehabharti0802/readmission-risk-model
+      - key: HF_MODEL_FILE
+        value: model.joblib
+
+      - key: MLSERVICE_ENV
+        value: hf
+      - key: MLSERVICE_LOGGING__FORMAT
+        value: json
+
+      # No MLflow reachable from here. Empty means "go straight to the local
+      # artifact" rather than burning a DNS timeout on every model load.
+      - key: MLSERVICE_MLFLOW__TRACKING_URI
+        value: ""
+
+      # HF_TOKEN is deliberately absent: the model repo is public, so no
+      # credential is needed to read it. A public artifact and no secret in the
+      # runtime is the better arrangement, not a shortcut.

@@ -267,7 +267,21 @@ class Settings(BaseSettings):
         env_nested_delimiter="__",
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="forbid",  # an unknown key is a typo; typos in config cause outages
+        # "ignore", not "forbid", and only at THIS level.
+        #
+        # A .env file is shared ground: it legitimately holds credentials for
+        # other tools. With extra="forbid" a single unrelated line — an HF token,
+        # an API key — made the entire service refuse to start with a pydantic
+        # ValidationError, and that error printed the offending VALUE. So an
+        # unrelated secret in .env both broke the service and leaked itself into
+        # the traceback. Observed, not hypothesised.
+        #
+        # Typo protection is not lost. Every nested section still uses
+        # extra="forbid" (see _Section), so MLSERVICE_API__PROT is still caught,
+        # and stray_env_vars() still reports root-level MLSERVICE_ names that
+        # match nothing. What is no longer an error is a variable that was never
+        # addressed to this application.
+        extra="ignore",
         validate_default=True,
     )
 
