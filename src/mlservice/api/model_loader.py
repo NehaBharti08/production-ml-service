@@ -100,19 +100,32 @@ class ModelStore:
         settings = get_settings()
 
         with self._lock:
+            # Every source records why it declined, so a failure names ALL the
+            # reasons rather than whichever exception happened to fire last.
+            #
+            # This mattered: the container reported "No module named 'mlflow'"
+            # when the decisive problem was an absent artifact. The registry
+            # error was stale — it was simply the only one anything recorded,
+            # because a source returning None set nothing. That message sent
+            # the investigation at the wrong layer entirely.
+            reasons: list[str] = []
+
             for attempt in (self._load_from_registry, self._load_from_local):
                 try:
                     model = attempt()
                 except Exception as exc:  # try the next source
+                    reason = f"{attempt.__name__}: {str(exc)[:200]}"
                     log.warning(
                         "model_load_attempt_failed",
                         source=attempt.__name__,
                         error=str(exc)[:300],
                     )
+                    reasons.append(reason)
                     self._last_error = str(exc)[:300]
                     continue
 
                 if model is None:
+                    reasons.append(f"{attempt.__name__}: declined (see logs)")
                     continue
 
                 # A model that loads but cannot score is not a loaded model.
@@ -128,10 +141,14 @@ class ModelStore:
                 )
                 return model
 
+            detail = "; ".join(reasons) or "no source was attempted"
+            self._last_error = detail[:300]
             raise ModelNotLoadedError(
-                "no model could be loaded from the registry or the local fallback: "
-                f"{self._last_error}. Set model.local_fallback or start MLflow. "
-                f"Expected fallback at {self._fallback_path(settings)}."
+                f"no model could be loaded. Reasons: {detail}. "
+                f"Expected local artifact at {self._fallback_path(settings)} "
+                "(the serving image bakes it in at build time; if it is missing, "
+                "the image was built without one). "
+                "Otherwise start MLflow and set mlflow.tracking_uri."
             )
 
     def _load_from_registry(self) -> LoadedModel | None:
@@ -146,7 +163,18 @@ class ModelStore:
             log.info("registry_unreachable_skipping", configured=uri or "(unset)")
             return None
 
-        import mlflow
+        try:
+            import mlflow
+        except ImportError as exc:
+            # Expected in the serving image: the `serve` dependency group
+            # deliberately excludes mlflow to keep the CVE surface small. This
+            # is a design decision, not a broken install — so it is reported as
+            # a declined source rather than an error, and the local artifact is
+            # the intended path from here.
+            raise RuntimeError(
+                "mlflow is not installed in this image (serve group excludes it) "
+                "— the local artifact is the intended source here"
+            ) from exc
 
         mlflow.set_tracking_uri(uri)
         pipeline = registry.load_by_alias(settings.model.name, settings.model.serving_alias)
@@ -194,18 +222,57 @@ class ModelStore:
 
     @staticmethod
     def _training_summary() -> dict[str, Any]:
-        """Read the training run's summary, or an empty dict."""
+        """The model's serving contract: threshold and feature schema hash.
+
+        **Read from a sidecar beside the artifact first, and only then from
+        reports/.** The order is the whole fix.
+
+        ``reports/training_summary.json`` is a build-time report that does not
+        travel with the model. The container mounts ``models/`` and nothing
+        else, so inside it that file does not exist — and the API fell back to
+        the config placeholder of 0.5 while the model had been tuned to 0.1011.
+
+        Nothing failed. The service returned 200 with a plausible probability
+        and ``flagged: false`` for every patient, because scores cluster near
+        0.1 and almost nothing clears 0.5. A screening model that never flags
+        anyone, reporting itself perfectly healthy. It was found by making one
+        real request to the container, and by nothing else — not by CI, not by
+        the unit tests, not by the warning this code already logged.
+
+        The structural answer is that an artifact must carry its own contract.
+        ``registry.save_local_fallback`` now writes ``metadata.json`` next to
+        ``model.joblib``, so wherever the model goes — a mount, an HF download,
+        a volume — its threshold goes with it.
+        """
         import json
 
-        from mlservice.config import PROJECT_ROOT
+        from mlservice.config import get_settings
 
-        path = PROJECT_ROOT / "reports" / "training_summary.json"
-        if path.is_file():
+        settings = get_settings()
+        candidates = [
+            # Beside the artifact. Travels with the model, so this is the one
+            # that is right in a container.
+            ModelStore._fallback_path(settings).parent / "metadata.json",
+            # The build-time report. Correct on a dev machine, absent in a
+            # container — kept so local workflows are unaffected.
+            #
+            # Resolved through settings rather than PROJECT_ROOT: hardcoding the
+            # repository root made this unreachable by configuration and, more
+            # to the point, untestable — the first version of the regression
+            # test below silently read THIS repository's real summary and passed
+            # a case that should have failed.
+            settings.paths.reports / "training_summary.json",
+        ]
+
+        for path in candidates:
+            if not path.is_file():
+                continue
             try:
                 loaded = json.loads(path.read_text(encoding="utf-8"))
-                return loaded if isinstance(loaded, dict) else {}
             except (OSError, json.JSONDecodeError):
-                return {}
+                continue
+            if isinstance(loaded, dict) and loaded:
+                return loaded
         return {}
 
     @classmethod

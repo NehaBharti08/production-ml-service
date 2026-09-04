@@ -102,6 +102,91 @@ jobs:
           fi
           echo "returned $code"
 
+      # ---------------------------------------------------------------------
+      # THE SUCCESS PATH.
+      #
+      # Everything above tests that an unready service reports itself unready —
+      # correct, and precisely why a container that could NEVER serve passed CI
+      # for five phases. The `serve` dependency group excludes mlflow by design
+      # and .dockerignore excludes models/ by design, so nothing in the image
+      # could load a model, and no check ever asserted that anything should.
+      # It was found by making one HTTP request to a running container.
+      #
+      # So: mount an artifact and assert the container actually serves it, with
+      # the threshold from the artifact's own metadata rather than the config
+      # placeholder. A stub model suffices — what is under test is the plumbing
+      # (mount -> load -> serve -> honour the contract), which is what broke.
+      #
+      # The stub is generated INSIDE the image, so it is pickled by the exact
+      # scikit-learn the runtime will unpickle it with. Building it on the
+      # runner would risk a version mismatch failing this test for a reason
+      # that has nothing to do with what it checks.
+      # ---------------------------------------------------------------------
+      - name: Build a stub artifact using the image's own scikit-learn
+        run: |
+          set -euo pipefail
+          mkdir -p artifact/champion
+          docker run --rm -v "${PWD}/artifact:/out" --entrypoint python mlservice-api:ci -c "
+          import json, joblib
+          from sklearn.dummy import DummyClassifier
+          m = DummyClassifier(strategy='prior').fit([[0.0],[1.0]], [0,1])
+          joblib.dump(m, '/out/champion/model.joblib')
+          json.dump({'champion':'stub','champion_threshold':0.1011,
+                     'feature_schema_hash':'ci-stub-hash'},
+                    open('/out/champion/metadata.json','w'))
+          print('stub artifact written')
+          "
+          ls -la artifact/champion/
+
+      - name: Start a container with the artifact mounted
+        run: |
+          docker rm -f api-served >/dev/null 2>&1 || true
+          docker run -d --name api-served -p 8001:8000 \
+            -e MLSERVICE_ENV=local \
+            -e MLSERVICE_MLFLOW__TRACKING_URI= \
+            -v "${PWD}/artifact:/app/models:ro" \
+            mlservice-api:ci
+
+      - name: It must become READY, not merely live
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/health/ready || echo 000)
+            if [ "$code" = "200" ]; then echo "ready after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          echo "::error::container never became READY with an artifact mounted"
+          docker logs api-served
+          exit 1
+
+      - name: It must serve the artifact's threshold, not the config placeholder
+        run: |
+          set -euo pipefail
+          curl -fsS http://localhost:8001/v1/model -o served.json
+          cat served.json
+          python - <<'PY'
+          import json, sys
+
+          d = json.load(open("served.json"))
+          threshold = d.get("decision_threshold")
+          schema = d.get("feature_schema_hash")
+          print("served threshold:", threshold, "schema:", schema)
+
+          if threshold != 0.1011:
+              print(f"::error::served threshold {threshold}, expected 0.1011 from the artifact")
+              print("::error::this is the bug where a model tuned to 0.1011 was served at 0.5,")
+              print("::error::flagging nobody while reporting itself perfectly healthy")
+              sys.exit(1)
+          if schema != "ci-stub-hash":
+              print(f"::error::served schema hash {schema}, expected ci-stub-hash")
+              sys.exit(1)
+          print("OK: the artifact's contract reached the serving layer")
+          PY
+
+      - name: Clean up the served container
+        if: always()
+        run: docker rm -f api-served >/dev/null 2>&1 || true
+
       - name: Graceful shutdown drains rather than dropping
         run: |
           # Could not be verified during development: Windows Stop-Process is a
