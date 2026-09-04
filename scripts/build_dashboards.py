@@ -257,7 +257,20 @@ def golden_signals(t: dict[str, Any]) -> dict[str, Any]:
     panels.append(
         stat(
             "Error rate (5xx)",
-            'sum(rate(http_requests_total{status="5xx"}[5m])) '
+            # `or vector(0)` is load-bearing, not defensive padding.
+            #
+            # With no 5xx in the window the numerator matches no series at all,
+            # so the whole expression returns nothing — and this panel reduces
+            # with lastNotNull, which then keeps displaying the last value it
+            # ever saw. Observed: a red 10.21% held on screen through a
+            # completely healthy period, hours after the errors that produced
+            # it had stopped. The graph beside it correctly showed zero.
+            #
+            # A golden-signals panel that shows red while the service is fine
+            # is worse than no panel: it is the mechanism by which people learn
+            # to ignore the dashboard. Forcing the series to exist at 0 makes
+            # "no errors" render as 0 instead of as stale alarm.
+            '(sum(rate(http_requests_total{status="5xx"}[5m])) or vector(0)) '
             "/ clamp_min(sum(rate(http_requests_total[5m])), 0.001)",
             "percentunit",
             _steps(

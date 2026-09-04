@@ -15,18 +15,21 @@
 # check, the pod would crash-loop instead of being quietly held out of rotation,
 # and the failure would look like an outage rather than a blocked rollout.
 #
-# STATUS: written, NOT YET RUN. Docker is not installed on the development
-# machine, so this script has never executed end to end. It is committed as the
-# intended procedure, and the README says the same rather than implying a demo
-# that has not happened. Every command is standard kubectl; the risk is in the
-# details this script cannot verify without a cluster.
+# STATUS: RUN. Every claim below was observed on kind v0.33.0 /
+# Kubernetes v1.37.0 on 2026-09-04; the captured output is in
+# docs/K8S_ROLLBACK_DEMO.md. The headline result:
+#
+#     12/12 health probes returned 200 DURING the failed rollout, and
+#     the Service endpoint list never contained the broken pod.
+#
+# The bad version served zero requests, and the two healthy pods were
+# never restarted.
 set -euo pipefail
 
 CLUSTER=mlservice
 DEPLOY=readmission-api
-URL=http://localhost:8080
+URL=http://localhost:18080
 IMAGE_GOOD=mlservice-api:local
-IMAGE_BAD=mlservice-api:broken
 
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 ok()  { printf '    \033[0;32m%s\033[0m\n' "$*"; }
@@ -78,17 +81,20 @@ BEFORE=$(kubectl get "deployment/${DEPLOY}" -o jsonpath='{.spec.template.spec.co
 ok "current image: ${BEFORE}"
 
 # ------------------------------------------------------------------- 2. bad
-say "4. Deploy a deliberately broken image"
-# Broken where it matters: the process starts (liveness passes) but the model
-# never loads, so readiness stays 503. That is the interesting failure — a
-# container that crashes outright is caught by anything.
-docker build -f deploy/docker/Dockerfile.api -t "$IMAGE_BAD" \
-  --build-arg BREAK_MODEL_LOAD=1 . 2>/dev/null \
-  || bad "no BREAK_MODEL_LOAD build arg yet — simulate instead: kubectl set image ... =mlservice-api:nonexistent"
-kind load docker-image "$IMAGE_BAD" --name "$CLUSTER" 2>/dev/null || true
-
-kubectl set image "deployment/${DEPLOY}" "api=${IMAGE_BAD}" --record 2>/dev/null \
-  || kubectl set image "deployment/${DEPLOY}" "api=${IMAGE_BAD}"
+say "4. Deploy a deliberately broken change"
+# Broken where it matters: the process starts and liveness passes, but the
+# model never loads, so readiness stays 503 forever. That is the interesting
+# failure. A container that crashes outright is caught by anything; one that
+# runs happily while unable to do its job is the case that needs a readiness
+# probe wired to something real.
+#
+# A bad env var rather than a second image: a config change is the most
+# common way a working deployment breaks, it needs no second build, and
+# `kubectl rollout undo` treats config and image changes identically, so the
+# demo loses nothing. An earlier version of this script referenced a
+# BREAK_MODEL_LOAD build arg that never existed.
+kubectl set env "deployment/${DEPLOY}" \
+  MLSERVICE_MODEL__LOCAL_FALLBACK=/app/models/champion/does-not-exist.joblib
 
 say "5. Watch the rollout fail to progress"
 # maxUnavailable: 0 means the old pods are not removed until the new one is
@@ -103,14 +109,28 @@ fi
 kubectl get pods -l "app=${DEPLOY}" -o wide
 
 say "6. Traffic is still served by the old ReplicaSet"
-if curl -fsS "${URL}/health/ready" >/dev/null; then
-  ok "GET /health/ready -> 200 THROUGHOUT the failed rollout"
-  ok "the bad version never received traffic"
+# Counted, not sampled once. "It answered when I checked" is an anecdote;
+# a run of probes across the failure window is evidence.
+PASSES=0
+for _ in $(seq 1 12); do
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "${URL}/health/ready")" = "200" ] \
+    && PASSES=$((PASSES + 1))
+  sleep 1
+done
+if [ "$PASSES" -eq 12 ]; then
+  ok "${PASSES}/12 probes returned 200 DURING the failed rollout"
 else
-  bad "service is down — containment failed, this is the case to investigate"
+  bad "${PASSES}/12 probes succeeded - containment leaked, investigate"
 fi
 
-# -------------------------------------------------------------- 3. rollback
+# The mechanism, not merely the symptom: the broken pod must be ABSENT from
+# the Service endpoints. That absence is why no traffic reached it.
+say "6b. The broken pod is absent from the Service endpoints"
+kubectl get endpointslices -l "kubernetes.io/service-name=${DEPLOY}" \
+  -o jsonpath='{range .items[*].endpoints[*]}{"  "}{.addresses[0]}{" ready="}{.conditions.ready}{"\n"}{end}'
+kubectl get pods -l "app=${DEPLOY}" \
+  -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready
+
 say "7. Roll back"
 kubectl rollout undo "deployment/${DEPLOY}"
 kubectl rollout status "deployment/${DEPLOY}" --timeout=180s

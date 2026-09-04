@@ -204,8 +204,61 @@ def save_local_fallback(pipeline: Any, path: Path | None = None) -> Path:
     target = path or (get_settings().paths.models / "champion" / "model.joblib")
     target.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(pipeline, target)
+
+    write_artifact_metadata(target.parent)
+
     log.info("local_fallback_saved", path=str(target), size_kb=round(target.stat().st_size / 1e3))
     return target
+
+
+def write_artifact_metadata(directory: Path) -> Path | None:
+    """Write the serving contract beside the artifact.
+
+    **An artifact must carry its own contract.** The decision threshold is a
+    property of the fitted model in the same way its coefficients are — pairing
+    a model with someone else's threshold produces a service that is
+    confidently wrong.
+
+    It used to live only in ``reports/training_summary.json``, which does not
+    travel with the model. The container mounts ``models/`` and nothing else,
+    so the API silently fell back to the config placeholder of 0.5 against a
+    model tuned to 0.1011, and flagged nobody while reporting itself healthy.
+
+    Copying the two fields that constitute the contract next to the binary
+    means the threshold goes wherever the model goes — a mount, an HF download,
+    a Kubernetes volume.
+    """
+    import json
+
+    summary_path = get_settings().paths.reports / "training_summary.json"
+    if not summary_path.is_file():
+        log.warning(
+            "artifact_metadata_not_written",
+            reason="no training summary to copy from",
+            consequence="the served threshold will fall back to config",
+        )
+        return None
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    metadata = {
+        "champion": summary.get("champion"),
+        "champion_threshold": summary.get("champion_threshold"),
+        "feature_schema_hash": summary.get("feature_schema_hash"),
+        "calibration_method": summary.get("calibration_method"),
+        "registered_version": summary.get("registered_version"),
+        "written_by": "mlservice.models.registry.write_artifact_metadata",
+    }
+
+    directory.mkdir(parents=True, exist_ok=True)
+    out = directory / "metadata.json"
+    out.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    log.info(
+        "artifact_metadata_written",
+        path=str(out),
+        threshold=metadata["champion_threshold"],
+        schema_hash=metadata["feature_schema_hash"],
+    )
+    return out
 
 
 __all__ = [
@@ -218,4 +271,5 @@ __all__ = [
     "save_local_fallback",
     "server_reachable",
     "setup_tracking",
+    "write_artifact_metadata",
 ]

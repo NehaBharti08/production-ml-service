@@ -12,11 +12,40 @@ apiVersion: kind.x-k8s.io/v1alpha4
 name: mlservice
 nodes:
   - role: control-plane
+    extraMounts:
+      # The serving artifact, from the host into the node.
+      #
+      # The image deliberately contains no model — see docker-compose.yml and
+      # ADR 0009. That is what keeps promotion an alias flip rather than a
+      # rebuild, but it means a cluster has to supply the artifact from
+      # somewhere, and in kind that somewhere is the host.
+      #
+      # A real cluster would use a PersistentVolume or an initContainer that
+      # pulls from the registry — the same shape as the HF Space, which
+      # downloads at boot. hostPath is the kind-specific equivalent, not a
+      # pattern to copy into production.
+      - hostPath: ./models
+        containerPath: /artifacts/models
+        readOnly: true
     extraPortMappings:
       # Maps the NodePort straight to localhost so the demo can curl a stable
       # URL. `kubectl port-forward` dies when the pod it forwarded to is
       # replaced — which is exactly what a rollout does, so the tool would break
       # at the one moment the demo needs to keep observing.
       - containerPort: 30080
-        hostPort: 8080
+        hostPort: 18080
         protocol: TCP
+        # 18080, not 8080. On Windows with Hyper-V/WSL2 enabled, WinNAT reserves
+        # blocks of ports for its own use, and 8080 falls inside 8011-8110 on
+        # this machine. Nothing is listening there — the OS simply refuses the
+        # bind, and kind fails with a bare
+        #
+        #     bind: An attempt was made to access a socket in a way forbidden
+        #     by its access permissions
+        #
+        # which reads like a permissions problem and is not one. Check with:
+        #     netsh interface ipv4 show excludedportrange protocol=tcp
+        #
+        # The reserved blocks vary per machine and move across reboots, so if
+        # 18080 is ever taken, pick another port outside every listed range
+        # rather than assuming this file is wrong.

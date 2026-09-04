@@ -1,0 +1,229 @@
+# One-shot Hugging Face bootstrap.
+#
+# Creates the Model repo and the Space, trains the champion, and uploads the
+# artifact — all inside Actions, because that is the only place the HF token
+# exists. GitHub secrets are write-only: nothing can read HF_TOKEN back out,
+# which is the property that makes storing it there worthwhile.
+#
+# Run this ONCE. Afterwards `Deploy HF Space` handles every subsequent deploy.
+#
+# The split it establishes is the point:
+#
+#     HF Model repo = artifact store      HF Space = runtime
+#
+# The model binary is gitignored and always will be, so the Space downloads it
+# at boot rather than carrying it. Same registry -> runtime separation the
+# MLflow path uses, expressed with what a free tier provides.
+name: Bootstrap HF
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_repo:
+        description: "Model repo name (without the owner)"
+        type: string
+        default: readmission-risk-model
+      space_repo:
+        description: "Space name (without the owner)"
+        type: string
+        default: readmission-risk-service
+      private:
+        description: "Create both as private"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bootstrap-hf
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: create repos and upload the model
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --locked --all-groups
+
+      - name: Fail early if no token is configured
+        run: |
+          if [ -z "${{ secrets.HF_TOKEN }}" ]; then
+            echo "::error::HF_TOKEN is not set. Add a WRITE token at"
+            echo "::error::Settings -> Secrets and variables -> Actions -> HF_TOKEN"
+            exit 1
+          fi
+
+      # The HF username is read from the token rather than assumed. It need not
+      # match the GitHub handle, and guessing it would fail with a 404 that
+      # looks like a permissions problem.
+      - name: Identify the account and create both repos
+        id: hf
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          uv run python - <<'PY'
+          import os
+
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          me = api.whoami()
+          owner = me["name"]
+          print(f"authenticated as: {owner}")
+
+          private = "${{ inputs.private }}" == "true"
+          model_id = f"{owner}/${{ inputs.model_repo }}"
+          space_id = f"{owner}/${{ inputs.space_repo }}"
+
+          api.create_repo(model_id, repo_type="model", private=private, exist_ok=True)
+          print(f"model repo ready: {model_id}")
+
+          api.create_repo(
+              space_id,
+              repo_type="space",
+              space_sdk="docker",
+              private=private,
+              exist_ok=True,
+          )
+          print(f"space ready: {space_id}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"owner={owner}\n")
+              fh.write(f"model_id={model_id}\n")
+              fh.write(f"space_id={space_id}\n")
+          PY
+
+      - name: Cache dataset
+        uses: actions/cache@v6.1.0
+        with:
+          path: data/raw
+          key: dataset-${{ hashFiles('data/checksums.txt') }}
+
+      - name: Download and verify dataset
+        run: uv run mlservice data download
+
+      # Trained here rather than uploaded from a laptop, so the artifact in the
+      # Model repo is reproducible from this commit rather than from whatever
+      # happened to be on someone's disk.
+      - name: Train the champion
+        run: uv run mlservice train run
+
+      - name: The artifact must carry its own contract
+        # metadata.json holds the decision threshold and feature schema hash.
+        # Without it the Space serves the 0.5 config placeholder against a model
+        # tuned to 0.1011 — flagging nobody while reporting itself healthy. That
+        # bug is the reason this check is a gate and not a comment.
+        run: |
+          set -euo pipefail
+          ls -la models/champion/
+          uv run python - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          meta = Path("models/champion/metadata.json")
+          if not meta.is_file():
+              sys.exit("::error::metadata.json was not written beside the artifact")
+
+          payload = json.loads(meta.read_text(encoding="utf-8"))
+          threshold = payload.get("champion_threshold")
+          if threshold is None:
+              sys.exit("::error::metadata.json has no champion_threshold")
+          if threshold == 0.5:
+              sys.exit("::error::threshold is the 0.5 placeholder, not a trained value")
+          print(f"threshold {threshold}, schema {payload.get('feature_schema_hash')}")
+          PY
+
+      - name: Upload the artifact to the Model repo
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          MODEL_ID: ${{ steps.hf.outputs.model_id }}
+        run: |
+          set -euo pipefail
+          uv run python - <<'PY'
+          import os
+
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          repo = os.environ["MODEL_ID"]
+
+          for name in ("model.joblib", "metadata.json"):
+              api.upload_file(
+                  path_or_fileobj=f"models/champion/{name}",
+                  path_in_repo=name,
+                  repo_id=repo,
+                  commit_message=f"artifact from ${{ github.sha }}",
+              )
+              print(f"uploaded {name}")
+
+          # A model card, because an unlabelled binary on a public hub is
+          # exactly the kind of thing this project argues against.
+          card = """---
+          license: mit
+          tags: [tabular-classification, healthcare, not-for-clinical-use]
+          ---
+
+          # Readmission risk — serving artifact
+
+          > **NOT FOR CLINICAL USE.** An engineering demonstration of ML
+          > operations, trained on the public Diabetes 130-US Hospitals dataset
+          > (1999-2008). Never clinically validated, not a medical device, and
+          > must never inform patient care.
+
+          Calibrated logistic regression. `metadata.json` carries the decision
+          threshold and feature schema hash — the serving contract travels with
+          the artifact, deliberately.
+
+          Source and full model card:
+          https://github.com/${{ github.repository }}
+          """
+          api.upload_file(
+              path_or_fileobj=card.encode(),
+              path_in_repo="README.md",
+              repo_id=repo,
+          )
+          print("uploaded README.md")
+          PY
+
+      - name: Point the Space at the Model repo
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          SPACE_ID: ${{ steps.hf.outputs.space_id }}
+          MODEL_ID: ${{ steps.hf.outputs.model_id }}
+        run: |
+          set -euo pipefail
+          uv run python - <<'PY'
+          import os
+
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          space = os.environ["SPACE_ID"]
+
+          api.add_space_variable(space, "HF_MODEL_REPO", os.environ["MODEL_ID"])
+          api.add_space_variable(space, "HF_MODEL_FILE", "model.joblib")
+          print(f"{space} -> HF_MODEL_REPO={os.environ['MODEL_ID']}")
+          PY
+
+      - name: Summary
+        run: |
+          {
+            echo "### Hugging Face bootstrap complete"
+            echo
+            echo "| | |"
+            echo "|:--|:--|"
+            echo "| Model repo | https://huggingface.co/${{ steps.hf.outputs.model_id }} |"
+            echo "| Space | https://huggingface.co/spaces/${{ steps.hf.outputs.space_id }} |"
+            echo
+            echo "The Space is created but **empty**. Run **Deploy HF Space** next."
+          } >> "$GITHUB_STEP_SUMMARY"

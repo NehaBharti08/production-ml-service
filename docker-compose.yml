@@ -116,6 +116,23 @@ services:
       # Prediction log — the raw material for every monitoring feature in
       # Phases 5-7. Bind-mounted so the monitoring job can read it from the host.
       - ./data/monitoring:/app/data/monitoring
+
+      # The serving artifact, mounted read-only — NOT baked into the image.
+      #
+      # This line is why the container can serve at all. The `serve` dependency
+      # group deliberately excludes mlflow, so loading from the registry raises
+      # ImportError by design; the local artifact is the only route left, and
+      # .dockerignore (correctly) keeps models/ out of the build context.
+      # Without this mount, /health/ready is 503 forever — which is exactly what
+      # happened the first time this stack was ever started.
+      #
+      # Mounted rather than baked because PROMOTION IS AN ALIAS FLIP WITH NO
+      # DEPLOY. A model inside the image would make every promotion a rebuild
+      # and redeploy, and the entire Phase 7 design would collapse. The model is
+      # data with its own lifecycle; the image is code.
+      #
+      # Read-only: the service reads its model and must never write it.
+      - ./models:/app/models:ro
     healthcheck:
       # Readiness, not liveness: this must fail while the model is unloaded,
       # which is what makes the Phase 7 rollback demo work.
