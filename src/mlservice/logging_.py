@@ -209,7 +209,19 @@ def configure_logging(*, force: bool = False) -> None:
         ],
     )
 
-    handler = logging.StreamHandler(sys.stdout)
+    # Logs go to STDERR, machine-readable output to STDOUT.
+    #
+    # This is not stylistic. `mlservice retrain check --json > triggers.json`
+    # captured the log stream alongside the JSON and json.load failed with
+    # "Extra data" - which broke the retraining workflow on its first real run.
+    # A --json flag whose output cannot be redirected is a --json flag that does
+    # not work, and the whole point of it is automation.
+    #
+    # Containers are unaffected: Docker and Kubernetes collect both streams, and
+    # every log collector treats stderr as a normal source. Diagnostics on
+    # stderr is the convention precisely so a program's actual output stays
+    # pipeable.
+    handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(formatter)
 
     root = logging.getLogger()
