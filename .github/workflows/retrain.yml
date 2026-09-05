@@ -106,6 +106,18 @@ jobs:
       - name: Download and verify dataset
         run: uv run mlservice data download
 
+      # Training reads train/val/test parquet files; the raw download alone is
+      # not enough. Missing this step failed the first end-to-end run with
+      # "FileNotFoundError: missing splits ['train', 'val', 'test']" — the
+      # workflow went straight from raw data to training, a gap nothing could
+      # catch because no other job trains from scratch.
+      #
+      # This also regenerates the audit, so the splits are produced by the same
+      # code path a human would run rather than by a shortcut that exists only
+      # in CI.
+      - name: Clean, audit and write the splits
+        run: uv run mlservice data audit --write-splits
+
       # The incumbent's evidence must be captured BEFORE retraining overwrites
       # the training summary, or the gates end up comparing the challenger
       # against itself and pass unanimously while checking nothing.
