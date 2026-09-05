@@ -1,0 +1,34 @@
+{
+  "model": "logistic_l2",
+  "registered_version": 2,
+  "pr_auc": {
+    "point": 0.123388,
+    "lower": 0.110984,
+    "upper": 0.137488
+  },
+  "brier": {
+    "point": 0.06909,
+    "lower": 0.065825,
+    "upper": 0.072587
+  },
+  "calibration": {
+    "ece": 0.014009,
+    "mce": 0.1
+  },
+  "subgroups": {
+    "worst_recall_gap": -0.232332,
+    "worst_group": "age=[40-50)",
+    "n_analysable": 10
+  },
+  "artifact_loads": false,
+  "canary": "ModelNotLoadedError: no model could be loaded. Reasons: _load_from_registry: declined (see logs); _load_from_local: declined (see logs). Expected local artifact at /home/runner/work/production-ml-service/production-ml-service/models/champion/model.joblib (the serving image bakes it in at build time; if it is missing, the image was built without one). Otherwise start MLflow and set mlflow.tracking_uri.",
+  "feature_schema_hash": "06f5f0b873ca95f6",
+  "behavioral": {
+    "total": 20,
+    "passed": 0,
+    "failures": []
+  },
+  "data_quality": {
+    "suite_passed": true
+  }
+}
