@@ -27,8 +27,17 @@ spec:
   replicas: 2
   revisionHistoryLimit: 5 # keeps `kubectl rollout undo` meaningful
   selector:
+    # `track` is here so the canary Deployment can share the `app` label -
+    # which is what puts both into the one Service - WITHOUT this Deployment's
+    # selector also matching the canary's pods. Overlapping Deployment
+    # selectors are the classic way a canary gets silently scaled away by the
+    # stable controller.
+    #
+    # Note: a Deployment's selector is immutable. Adding this to an existing
+    # deployment requires `kubectl delete deployment` first.
     matchLabels:
       app: readmission-api
+      track: stable
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -40,7 +49,8 @@ spec:
   template:
     metadata:
       labels:
-        app: readmission-api
+        app: readmission-api      # the Service selects on this
+        track: stable             # ...this keeps the two Deployments disjoint
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8000"

@@ -1,0 +1,121 @@
+# Canary deployment — 10% of traffic to a challenger.
+#
+# **Weighting by replica ratio, not by a service mesh.** Both Deployments carry
+# `app: readmission-api`, so the one Service load-balances across every Ready
+# pod from either. Nine stable replicas beside one canary gives 1-in-10, which
+# is the `rollout.canary.traffic_percent: 10` in configs/thresholds.yaml.
+#
+# This is the honest way to do a canary without Istio or Linkerd, and it has a
+# real limitation worth stating rather than hiding: the split is quantised by
+# replica count. 10% needs 9:1. Finer weights need more pods or a mesh, and a
+# mesh needs resources this machine does not have — the plan budgets kind at
+# 3.5-4 GB precisely because compose and a cluster cannot both run here.
+#
+# The canary serves a DIFFERENT OPERATING POINT (threshold 0.15 against the
+# champion's 0.1011). That is what makes the split measurable: every response
+# carries `decision_threshold`, so counting responses attributes traffic to a
+# version without needing pod names, headers, or a mesh's telemetry. It is also
+# what a canary genuinely is — a different model version taking real traffic.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: readmission-api-canary
+  labels:
+    app: readmission-api
+    track: canary
+spec:
+  replicas: 1 # 1 of 10 total = the configured 10%
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: readmission-api
+      track: canary
+  template:
+    metadata:
+      labels:
+        # `app` is what the Service selects on — this is the line that puts the
+        # canary into rotation. `track` distinguishes it for kubectl and for
+        # scaling it to zero, which is how a rollback is performed here.
+        app: readmission-api
+        track: canary
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: api
+          image: mlservice-api:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: readmission-api-config
+          env:
+            # The only difference from stable. Points at the challenger
+            # artifact, whose metadata.json carries the candidate threshold.
+            - name: MLSERVICE_MODEL__LOCAL_FALLBACK
+              value: /app/models/canary/model.joblib
+
+          # Identical probes to stable, deliberately. A canary held to a weaker
+          # readiness standard is not a canary — it is an unguarded rollout with
+          # a reassuring name.
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: logs
+              mountPath: /app/logs
+            - name: model
+              mountPath: /app/models
+              readOnly: true
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}
+        - name: model
+          hostPath:
+            path: /artifacts/models
+            type: Directory
