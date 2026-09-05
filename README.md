@@ -349,7 +349,7 @@ undisclosed is worse than reading them here.
 | Latency profile | ⚠️ measured, but load generator was co-located — `remeasure_required: true` |
 | Container actually serves predictions | ✅ verified end-to-end; regression-tested in CI |
 | Dashboards provision from a cold start | ✅ all three, screenshots above |
-| Canary rollout | ❌ configured, **never exercised** |
+| Canary rollout | ✅ **run on kind** — 10.0% split measured, caught a regression latency/error gates missed, rolled back ([captured](docs/K8S_ROLLBACK_DEMO.md#7-canary-rollout--captured-run)) |
 | `kubectl rollout undo` | ✅ **run on kind** — broken deploy contained, 12/12 probes served, [captured output](docs/K8S_ROLLBACK_DEMO.md) |
 | Live public endpoint | ❌ **not deployed** — image, Space config and deploy workflow are written and the payload dry-runs clean; no HF token is configured, so it has never run |
 | End-to-end unattended retrain | ❌ triggers fire correctly on real evidence; the full loop has not run alone |

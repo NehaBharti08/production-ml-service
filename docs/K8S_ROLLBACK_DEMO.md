@@ -169,11 +169,120 @@ config and image changes identically.
 
 ---
 
+---
+
+## 7. Canary rollout — captured run
+
+Run on the same cluster, 2026-09-05. **The canary caught a regression that
+latency and error-rate monitoring could not see.**
+
+### Weighting without a service mesh
+
+Both Deployments carry `app: readmission-api`, so the one Service
+load-balances across every Ready pod from either. Nine stable replicas beside
+one canary is 1-in-10 — the `rollout.canary.traffic_percent: 10` in
+`configs/thresholds.yaml`.
+
+The split is quantised by replica count: 10% needs 9:1, and finer weights need
+more pods or a mesh. A mesh needs resources this machine does not have. Stated
+rather than hidden.
+
+**Attribution comes from the response, not from telemetry.** The canary serves
+a different operating point — threshold 0.15 against the champion's 0.1011 —
+so every response says which version produced it. That is also what a canary
+genuinely *is*: a different model version taking real traffic.
+
+```console
+$ kubectl get pods -l app=readmission-api -L track
+  9  stable  1/1 Running
+  1  canary  1/1 Running
+```
+
+### Measured split
+
+```console
+  track         n   share   flagged   mean p   p99 ms
+  stable      360   90.0%     16.7%   0.0699     40.8
+  canary       40   10.0%      0.0%   0.0697     37.7
+```
+
+**10.0% measured against 10% configured**, n=400. An earlier 300-request run
+gave 8.7%, which is 0.75 standard errors from 10% — consistent, and a reminder
+that one run is a sample rather than a proof.
+
+### The verdict
+
+```console
+  BREACH EVALUATION (configs/thresholds.yaml -> rollout.canary)
+    pass  canary p99 within SLO          37.7 ms <= 700 ms
+    pass  canary 5xx ratio               0.00% <= 1%
+    FAIL  flagged-rate drift vs stable   16.7% -> 0.0% (-16.7 pts, limit +/-10)
+
+  VERDICT: BREACH - flagged-rate drift vs stable
+```
+
+**This is the whole argument for canaries in one screen.** The challenger was
+fast and threw no errors — it passed every operational gate. And it flagged
+*nobody*: a screening model that identifies zero at-risk patients, while
+latency, error rate and health checks all read green.
+
+That is the same failure mode that slipped past CI four separate times in this
+project. Here it was caught in 400 requests of real traffic, by the only check
+that looks at what the model *does* rather than whether it responds.
+
+Note `mean p` is identical across tracks (0.0699 vs 0.0697) — the scores are the
+same, because the weights are the same. The entire difference lands in the
+flagged rate, which is precisely the quantity downstream humans feel as
+workload. Watching only score distributions would have missed this.
+
+### Rollback
+
+```console
+$ kubectl scale deployment/readmission-api-canary --replicas=0
+deployment.apps/readmission-api-canary scaled
+
+  track         n   share
+  stable      150  100.0%
+  canary        0    0.0%
+```
+
+Traffic returns to stable immediately. Scaling to zero rather than deleting
+keeps the Deployment and its history for the post-incident review.
+
+### What this run found
+
+**An HPA silently caps a replica-weighted canary.** `kubectl scale --replicas=9`
+appeared to succeed and then settled at 4, because the HPA's `maxReplicas: 4`
+overrode it — turning a configured 10% split into 20% with no error anywhere.
+The two mechanisms both control replica count and neither knows about the
+other.
+
+The demo removes the HPA first. In a real cluster the canary controller and the
+autoscaler have to be reconciled deliberately; a canary whose weight is set by
+replica ratio cannot share a Deployment with an autoscaler that has its own
+opinion about that ratio.
+
+**Overlapping Deployment selectors would have scaled the canary away.** The
+stable Deployment originally selected on `app: readmission-api` alone, which
+also matches canary pods. Both Deployments now carry an explicit `track` label
+in their selectors. A Deployment's selector is immutable, so applying this to a
+running deployment needs `kubectl delete deployment` first.
+
+### Not demonstrated
+
+- **Automatic** rollback. The breach evaluation and the rollback are both
+  scripted and both real, but nothing watches continuously and pulls the
+  trigger on its own. `auto_rollback_on_breach: true` describes intent; a
+  controller would be needed to honour it unattended.
+- **The 1000-prediction hold.** `min_predictions_before_promote` is 1000; this
+  run used 400, enough to measure the split and catch the regression but short
+  of the configured promotion bar.
+
 ## What is still not demonstrated
 
-- **The canary.** Weighted traffic splitting is configured in
-  `thresholds.yaml` and has never run. This demo is a rollout/rollback
-  demonstration, not a canary one.
+- **Automatic** canary rollback. The canary itself is now demonstrated in
+  §7 — split measured, regression caught, rollback executed — but the
+  evaluate-and-roll-back loop is scripted rather than continuous.
 - **Multi-node behaviour.** Single-node cluster by choice; the resource budget
   does not allow more, and scheduling is not what this demonstrates.
 - **The HPA does nothing here.** It is applied and reports `<unknown>/70%`
