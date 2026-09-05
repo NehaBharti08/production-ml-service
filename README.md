@@ -351,22 +351,42 @@ undisclosed is worse than reading them here.
 | Dashboards provision from a cold start | ✅ all three, screenshots above |
 | Canary rollout | ✅ **run on kind** — 10.0% split measured, caught a regression latency/error gates missed, rolled back ([captured](docs/K8S_ROLLBACK_DEMO.md#7-canary-rollout--captured-run)) |
 | `kubectl rollout undo` | ✅ **run on kind** — broken deploy contained, 12/12 probes served, [captured output](docs/K8S_ROLLBACK_DEMO.md) |
-| Live public endpoint | ❌ **not deployed** — image, Space config and deploy workflow are written and the payload dry-runs clean; no HF token is configured, so it has never run |
+| Live public endpoint | ❌ **not deployed** — image built and verified serving locally exactly as the host runs it; awaiting the Render connect step. HF Spaces were the original target until Hugging Face began charging for Docker Spaces (a 402 from their API, 2026-09-04) |
+| Model artifact published | ✅ [live on Hugging Face](https://huggingface.co/nehabharti0802/readmission-risk-model) with its serving contract |
 | End-to-end unattended retrain | ❌ triggers fire correctly on real evidence; the full loop has not run alone |
 
-The three ❌ items in the lower half share one cause: **Docker is not installed
-on the development machine.** Rather than pretend otherwise, every affected
-document carries its own "not verified" section, and
-`scripts/k8s_rollback_demo.sh` says `STATUS: written, NOT run` in its header.
+Everything above was written before any of it had run. Installing Docker and
+running it all found **eleven real defects** — a container that could never
+serve a model, a dashboard panel showing a stale red error rate through a
+healthy period, five separate instances of a decision threshold falling back to
+a placeholder, an HPA silently capping a canary's traffic share. Each one is
+recorded in the commit that fixed it and in
+[docs/K8S_ROLLBACK_DEMO.md](docs/K8S_ROLLBACK_DEMO.md).
 
-**Deploying the live endpoint.** Everything is in place except the credential:
-[`deploy/docker/Dockerfile.hf`](deploy/docker/Dockerfile.hf),
-[`deploy/hf-space/README.md`](deploy/hf-space/README.md) and
-[`.github/workflows/deploy-hf.yml`](.github/workflows/deploy-hf.yml). Add an HF
-write token as the `HF_TOKEN` repository secret, push the trained artifact to an
-HF Model repo, and dispatch the workflow. The model binary reaches the Space by
-download at startup and never enters git — the same artifact-store/runtime split
-the MLflow path uses.
+None of them were visible from reading the code. That is the argument for the
+verification table existing at all: a ✅ here means something was executed and
+observed, and the two remaining ❌ mean exactly what they say.
+
+**Deploying the live endpoint.** The artifact is already published and the
+image is built and verified. What remains is connecting the host.
+
+Hugging Face was the original target. It now requires a PRO subscription for
+Docker Spaces — confirmed by a 402 straight from their API on 2026-09-04:
+*"Static Spaces are free for everyone, but hosting Gradio and Docker Spaces on
+free cpu-basic requires a PRO subscription."* The project's constraint is a $0
+endpoint, so the fallback the plan documented became the primary.
+
+[`render.yaml`](render.yaml) is a Render Blueprint: free tier, Docker, no credit
+card. Connect the repo at render.com and it reads that file. The service
+downloads the model from the
+[HF Model repo](https://huggingface.co/nehabharti0802/readmission-risk-model) at
+boot, so the binary never enters git — the same artifact-store/runtime split the
+MLflow path uses, and the reason
+[`Dockerfile.hf`](deploy/docker/Dockerfile.hf) reads its port from the
+environment rather than hardcoding one.
+
+Free-tier honesty: the service sleeps after 15 minutes idle and the next request
+pays a ~1 minute cold start.
 
 **Induced vs real drift.** Where drift is deliberately induced to demonstrate
 detection, every report carries `drift_origin: induced` and the docs say so. The
