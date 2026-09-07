@@ -13,6 +13,31 @@
 
 ---
 
+## Try it
+
+**Live endpoint:** https://readmission-risk-service.onrender.com
+
+```bash
+curl https://readmission-risk-service.onrender.com/v1/model
+curl -X POST https://readmission-risk-service.onrender.com/v1/predict   -H "Content-Type: application/json"   -d '{"features": {...}}'          # see /docs for the full schema
+```
+
+Interactive API docs at [`/docs`](https://readmission-risk-service.onrender.com/docs),
+a UI with a non-dismissable disclaimer at
+[`/`](https://readmission-risk-service.onrender.com/), Prometheus metrics at
+[`/metrics`](https://readmission-risk-service.onrender.com/metrics).
+
+The model artifact lives in a separate
+[Hugging Face Model repo](https://huggingface.co/nehabharti0802/readmission-risk-model)
+and is downloaded at boot, so the binary never enters git.
+
+> **Free tier, stated honestly:** the service sleeps after 15 minutes idle. The
+> first request after a sleep pays a cold start of roughly a minute. It is a
+> demo endpoint, not the monitoring substrate — that runs locally on compose,
+> because a Render free instance has no persistent disk.
+
+---
+
 ## What this project is
 
 Most ML portfolios prove someone can *train* a model. This one exists to prove
@@ -351,21 +376,26 @@ undisclosed is worse than reading them here.
 | Dashboards provision from a cold start | ✅ all three, screenshots above |
 | Canary rollout | ✅ **run on kind** — 10.0% split measured, caught a regression latency/error gates missed, rolled back ([captured](docs/K8S_ROLLBACK_DEMO.md#7-canary-rollout--captured-run)) |
 | `kubectl rollout undo` | ✅ **run on kind** — broken deploy contained, 12/12 probes served, [captured output](docs/K8S_ROLLBACK_DEMO.md) |
-| Live public endpoint | ❌ **not deployed** — image built and verified serving locally exactly as the host runs it; awaiting the Render connect step. HF Spaces were the original target until Hugging Face began charging for Docker Spaces (a 402 from their API, 2026-09-04) |
+| Live public endpoint | ✅ **live** at [readmission-risk-service.onrender.com](https://readmission-risk-service.onrender.com) — serving the trained threshold 0.1011, 17.6 ms. HF Spaces were the original target until Hugging Face began charging for Docker Spaces (a 402 from their API, 2026-09-04) |
 | Model artifact published | ✅ [live on Hugging Face](https://huggingface.co/nehabharti0802/readmission-risk-model) with its serving contract |
-| End-to-end unattended retrain | ❌ triggers fire correctly on real evidence; the full loop has not run alone |
+| End-to-end unattended retrain | ✅ **ran in CI** — retrained from raw data, collected evidence, all six gates passed, rollback path verified |
 
 Everything above was written before any of it had run. Installing Docker and
-running it all found **eleven real defects** — a container that could never
+running it all found **thirteen real defects** — a container that could never
 serve a model, a dashboard panel showing a stale red error rate through a
 healthy period, five separate instances of a decision threshold falling back to
-a placeholder, an HPA silently capping a canary's traffic share. Each one is
+a placeholder, an HPA silently capping a canary's traffic share, a `--json` flag
+whose output could not be redirected because the logs shared stdout. Each is
 recorded in the commit that fixed it and in
 [docs/K8S_ROLLBACK_DEMO.md](docs/K8S_ROLLBACK_DEMO.md).
 
-None of them were visible from reading the code. That is the argument for the
-verification table existing at all: a ✅ here means something was executed and
-observed, and the two remaining ❌ mean exactly what they say.
+**None were visible from reading the code**, and most lived in the same place:
+where the tests stopped and the real invocation began. Unit tests exercised the
+code; nothing exercised the *program*, the *container*, or the *workflow* until
+each was actually run.
+
+That is the argument for this table existing at all. Every ✅ here means
+something was executed and observed, not that it looked correct.
 
 **Deploying the live endpoint.** The artifact is already published and the
 image is built and verified. What remains is connecting the host.
