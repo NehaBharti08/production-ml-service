@@ -185,7 +185,7 @@ jobs:
             reports/incumbent_evidence.json
             gates.log
 
-      - name: Open a pull request with the evidence
+      - name: Publish the evidence branch, and a PR if permitted
         if: steps.gates.outputs.promote == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -195,35 +195,61 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
+
+          # -f because reports/*.json is gitignored: these are build outputs
+          # everywhere except here, where they are the evidence.
           git add -f reports/gate_decision.json reports/challenger_evidence.json \
                      reports/incumbent_evidence.json
-          git commit -m "chore(retrain): challenger passed all promotion gates
+          git commit -q -m "chore(retrain): challenger passed all promotion gates
 
           Trigger: ${{ needs.check.outputs.reason }}
 
-          The gate decision and challenger evaluation are attached. Promotion is
-          a separate, human step:
+          Promotion is a separate, human step:
 
               uv run mlservice retrain promote --version <N> \\
                 --decision reports/gate_decision.json --trigger scheduled"
-          git push origin "$BRANCH"
-          gh pr create \
+          git push -q origin "$BRANCH"
+
+          # A PR is the nicer surface, but creating one requires the
+          # repository setting 'Allow GitHub Actions to create and approve
+          # pull requests'. It is off by default, and the first real run of
+          # this workflow failed on exactly that after doing all the work:
+          #
+          #   GitHub Actions is not permitted to create or approve pull
+          #   requests (createPullRequest)
+          #
+          # Requiring a privileged repo setting for something that works
+          # without one is the wrong dependency, and losing a completed
+          # retraining run to a missing checkbox is the wrong failure. The
+          # branch is pushed either way; the PR is an upgrade, not a
+          # precondition.
+          PR_URL=$(gh pr create \
             --title "Retrain: challenger passed all gates" \
-            --body-file - <<'BODY'
-          Automated retraining run.
+            --body "Automated retraining run. Trigger: ${{ needs.check.outputs.reason }}.
 
-          **Trigger:** see the run summary.
-          **Gates:** all passed — see `reports/gate_decision.json`.
+          All six promotion gates passed - see reports/gate_decision.json.
 
-          This PR does **not** promote anything. Merging records the evidence;
-          promotion is a deliberate command against the registry, because the
-          canary has not been exercised on this project and auto-promotion
-          behind an untested safety net is the failure mode this repo is about.
+          This PR does NOT promote anything. Merging records the evidence;
+          promotion is a deliberate command against the registry.
 
-          Review the calibration numbers specifically. A challenger that ranks
-          better and calibrates worse is a regression here, and the gate that
-          blocks it is the one worth double-checking.
-          BODY
+          Review the calibration numbers specifically. A challenger that
+          ranks better and calibrates worse is a regression here, and that
+          gate is the one worth double-checking." 2>/dev/null) || PR_URL=""
+
+          {
+            echo "### Evidence published"
+            echo "- branch: \`${BRANCH}\`"
+            if [ -n "$PR_URL" ]; then
+              echo "- pull request: ${PR_URL}"
+            else
+              REPO="${{ github.server_url }}/${{ github.repository }}"
+              echo "- pull request: NOT created - Actions lacks permission."
+              echo "  Open one here: ${REPO}/compare/main...${BRANCH}?expand=1"
+              echo "  Or enable Settings -> Actions -> General -> Workflow"
+              echo "  permissions -> Allow GitHub Actions to create and"
+              echo "  approve pull requests."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report a blocked promotion
         if: steps.gates.outputs.promote != 'true'
