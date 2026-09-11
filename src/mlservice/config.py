@@ -159,32 +159,64 @@ class LoggingSettings(_Section):
 
 
 class DataSettings(_Section):
-    """Dataset identity and the split policy.
+    """Dataset identity, the label definition, and the split policy.
 
-    ``time_proxy_column`` is named as a *proxy* on purpose. The Diabetes 130
-    dataset has no timestamp; Phase 1 must verify that ordering by this column
-    actually carries time signal before any split built on it is trusted. See
-    docs/DECISIONS/0004-temporal-split-proxy.md.
+    Two fields here carry most of the project's data-quality reasoning.
+
+    ``time_column`` is a REAL date, not a proxy. The medical version of this
+    project had to prove statistically that an ID sequence carried time signal
+    before it could split on it; Lending Club simply records ``issue_d``, so
+    the split is chronological by construction.
+
+    ``post_origination_columns`` is the leakage list. Every column in it is
+    knowable only after the loan has run, and ``recoveries > 0`` means the loan
+    defaulted outright. They look like ordinary loan attributes, which is
+    exactly why they are named explicitly rather than left to judgment.
     """
 
-    dataset_name: str = "diabetes_130_us_hospitals"
+    dataset_name: str = "lending_club_accepted_2007_2018"
     source_url: str = ""
-    target_column: str = "readmitted"
-    #: Binary task: readmitted within 30 days vs everything else.
-    positive_label: str = "<30"
-    time_proxy_column: str = "encounter_id"
-    patient_id_column: str = "patient_nbr"
+    archive_name: str = "lending_club_accepted.csv"
+
+    target_column: str = "loan_status"
+    positive_label: str = "charged_off"
+
+    #: A real date column, with the format it is stored in ("Dec-2018").
+    time_column: str = "issue_d"
+    time_format: str = "%b-%Y"
+
+    #: Terminal outcomes. Anything absent from BOTH lists is unresolved and is
+    #: dropped rather than treated as a negative — a loan that has not defaulted
+    #: *yet* is not a repaid loan.
+    loan_status_bad: list[str] = Field(
+        default_factory=lambda: [
+            "Charged Off",
+            "Default",
+            "Does not meet the credit policy. Status:Charged Off",
+        ]
+    )
+    loan_status_good: list[str] = Field(
+        default_factory=lambda: [
+            "Fully Paid",
+            "Does not meet the credit policy. Status:Fully Paid",
+        ]
+    )
+
+    #: Right-censoring control. A loan is usable only once its full term has
+    #: elapsed by ``observation_end``. Without this the recent years poison the
+    #: label: 2018 loans are 11.4% resolved, and their default rate *falls* to
+    #: 15.8% purely because slow defaults have not happened yet.
+    require_matured_term: bool = True
+    observation_end: str = "2018-12-01"
+
+    post_origination_columns: list[str] = Field(default_factory=list)
+    identifier_columns: list[str] = Field(default_factory=list)
+
     #: Chronological fractions; must sum to 1.0.
     train_fraction: float = Field(default=0.60, gt=0, lt=1)
     val_fraction: float = Field(default=0.20, gt=0, lt=1)
     test_fraction: float = Field(default=0.20, gt=0, lt=1)
-    #: Keep only each patient's first encounter, preventing the same patient
-    #: from appearing on both sides of the split (Strack et al. protocol).
-    first_encounter_only: bool = True
-    #: discharge_disposition_id values meaning expired or hospice. A patient who
-    #: died cannot be readmitted, so these rows have a deterministic label.
-    #: Confirmed against the dataset's IDS_mapping in Phase 1 before use.
-    expired_discharge_ids: list[int] = Field(default_factory=lambda: [11, 13, 14, 19, 20, 21])
+
     random_seed: int = 42
 
     @model_validator(mode="after")
@@ -195,6 +227,16 @@ class DataSettings(_Section):
                 f"train/val/test fractions must sum to 1.0, got {total:.6f}. "
                 "A silent renormalisation here would quietly change every "
                 "downstream metric."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _outcome_lists_are_disjoint(self) -> DataSettings:
+        overlap = set(self.loan_status_bad) & set(self.loan_status_good)
+        if overlap:
+            raise ValueError(
+                f"loan statuses classed as both good and bad: {sorted(overlap)}. "
+                "The label would depend on which list was checked first."
             )
         return self
 

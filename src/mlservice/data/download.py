@@ -1,21 +1,30 @@
-"""Fetch the Diabetes 130-US Hospitals dataset and verify it byte-for-byte.
+"""Fetch the Lending Club accepted-loans file and verify it byte-for-byte.
 
-Reproducibility here is deliberate and cheap: rather than committing ~20 MB of
-patient-level records so everyone works from the same bytes, we commit a SHA256
-and verify the download against it. Same guarantee, none of the cost, and no
-clinical records in git history.
+Reproducibility here is deliberate and cheap: rather than committing 1.6 GB of
+loan records so everyone works from the same bytes, we commit a SHA256 and
+verify the download against it. Same guarantee, none of the cost, and no
+borrower-level data in git history.
 
-The checksum is recorded on first download and enforced on every subsequent
-one. If UCI ever republishes the archive, verification fails loudly rather than
-silently changing every number downstream — which is exactly what you want,
-because "the dataset changed under me" is otherwise an extremely hard bug to
-see.
+**The checksum matters more here than it did for the medical dataset.** Lending
+Club withdrew the official download, so the source is a community mirror on the
+Hugging Face hub. A mirror can change, disappear, or be substituted, and any of
+those would silently alter every number downstream. Pinning the bytes converts
+that from an invisible problem into a loud one:
+
+    ChecksumMismatchError: ... does not match the recorded checksum
+
+Treat the checksum as the source of truth and the URL as merely where the bytes
+happened to live.
+
+The file is a plain CSV, not an archive, so there is no extraction step — the
+medical version unpacked a zip. Downloads stream to a temporary file and are
+renamed into place only after verification, so an interrupted download can
+never masquerade as a cached one.
 """
 
 from __future__ import annotations
 
 import hashlib
-import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,19 +37,24 @@ log = get_logger(__name__)
 
 CHECKSUM_FILE: Path = PROJECT_ROOT / "data" / "checksums.txt"
 
-#: Files expected inside the archive. Named explicitly so a changed archive
-#: layout is caught here rather than as a confusing FileNotFoundError later.
-EXPECTED_MEMBERS = ("diabetic_data.csv", "IDS_mapping.csv")
+_CHUNK = 1 << 22  # 4 MiB — the file is ~1.6 GB, so larger chunks are worth it
 
-_CHUNK = 1 << 20  # 1 MiB
+#: Columns that must be present. Checked immediately after download so a
+#: substituted or truncated mirror fails here, with a clear message, rather
+#: than as a confusing KeyError somewhere in cleaning.
+REQUIRED_COLUMNS = ("issue_d", "loan_status", "term", "loan_amnt", "grade", "addr_state")
 
 
 @dataclass(frozen=True)
 class DownloadResult:
-    archive: Path
+    path: Path
     sha256: str
-    extracted: tuple[Path, ...]
+    size_bytes: int
     was_cached: bool
+
+    @property
+    def size_mb(self) -> float:
+        return round(self.size_bytes / 1_048_576, 1)
 
 
 def sha256_of(path: Path) -> str:
@@ -68,32 +82,62 @@ def read_recorded_checksum(name: str) -> str | None:
 def record_checksum(name: str, digest: str) -> None:
     """Record a checksum, creating the file with an explanatory header."""
     header = (
-        "# SHA256 checksums for the raw dataset archive.\n"
+        "# SHA256 checksums for the raw dataset.\n"
         "#\n"
-        "# Committed so the pipeline is reproducible without committing\n"
-        "# patient-level data. Verified on every download; a mismatch means the\n"
-        "# upstream archive changed and every downstream number would silently\n"
-        "# change with it.\n"
+        "# Committed so the pipeline is reproducible without committing 1.6 GB\n"
+        "# of loan records. Verified on every download.\n"
+        "#\n"
+        "# This matters more than usual: Lending Club withdrew the official\n"
+        "# download, so the source is a community mirror. A mirror that changes\n"
+        "# under us would alter every number downstream in silence. Pinning the\n"
+        "# bytes makes that failure loud instead.\n"
         "#\n"
         "# Format: <sha256>  <filename>\n"
     )
-    existing = ""
-    if CHECKSUM_FILE.is_file():
-        existing = "".join(
-            line + "\n"
-            for line in CHECKSUM_FILE.read_text(encoding="utf-8").splitlines()
-            if line.strip() and not line.startswith("#") and not line.strip().endswith(name)
+    existing = "".join(
+        line + "\n"
+        for line in (
+            CHECKSUM_FILE.read_text(encoding="utf-8").splitlines()
+            if CHECKSUM_FILE.is_file()
+            else []
         )
+        if line.strip() and not line.startswith("#") and not line.strip().endswith(name)
+    )
     CHECKSUM_FILE.parent.mkdir(parents=True, exist_ok=True)
     CHECKSUM_FILE.write_text(f"{header}{existing}{digest}  {name}\n", encoding="utf-8")
 
 
 class ChecksumMismatchError(RuntimeError):
-    """The downloaded archive does not match the recorded checksum."""
+    """The downloaded file does not match the recorded checksum."""
+
+
+class SchemaMismatchError(RuntimeError):
+    """The downloaded file is missing columns the pipeline depends on."""
+
+
+def verify_schema(path: Path) -> tuple[str, ...]:
+    """Read only the header row and confirm the columns we rely on are there.
+
+    Reading the header alone keeps this cheap on a 1.6 GB file, and catching a
+    substituted mirror *here* means the error names the real problem instead of
+    surfacing as a KeyError three modules later.
+    """
+    with path.open("r", encoding="utf-8", errors="replace") as fh:
+        header = fh.readline().strip()
+
+    columns = tuple(c.strip().strip('"') for c in header.split(","))
+    missing = [c for c in REQUIRED_COLUMNS if c not in columns]
+    if missing:
+        raise SchemaMismatchError(
+            f"{path.name} is missing required columns: {missing}. "
+            f"Found {len(columns)} columns beginning {columns[:5]}. "
+            "The mirror may have changed or the download may be truncated."
+        )
+    return columns
 
 
 def download(*, force: bool = False) -> DownloadResult:
-    """Download, verify and extract the dataset.
+    """Download, verify and return the raw dataset.
 
     Skips the network entirely when a verified copy is already present, so
     ``make audit`` is fast and works offline once seeded.
@@ -106,84 +150,74 @@ def download(*, force: bool = False) -> DownloadResult:
     if not url:
         raise ValueError("data.source_url is empty — cannot download the dataset.")
 
-    archive = raw_dir / "diabetes-130-us-hospitals.zip"
-    recorded = read_recorded_checksum(archive.name)
+    target = raw_dir / settings.data.archive_name
+    recorded = read_recorded_checksum(target.name)
 
-    if archive.is_file() and not force:
-        digest = sha256_of(archive)
+    if target.is_file() and not force:
+        digest = sha256_of(target)
         if recorded is None:
-            record_checksum(archive.name, digest)
-            log.info("checksum_recorded", file=archive.name, sha256=digest)
+            record_checksum(target.name, digest)
+            log.info("checksum_recorded", file=target.name, sha256=digest)
         elif digest != recorded:
             raise ChecksumMismatchError(
-                f"{archive} does not match the recorded checksum.\n"
+                f"{target} does not match the recorded checksum.\n"
                 f"  expected {recorded}\n  actual   {digest}\n"
-                "Delete the file and re-download, or investigate why it changed."
+                "The upstream mirror may have changed. Investigate before "
+                "re-recording — every downstream number depends on these bytes."
             )
-        log.info("download_skipped_cached", file=archive.name, sha256=digest)
-        return DownloadResult(archive, digest, _extract(archive, raw_dir), was_cached=True)
+        verify_schema(target)
+        size = target.stat().st_size
+        log.info("download_skipped_cached", file=target.name, sha256=digest, size_mb=size / 1e6)
+        return DownloadResult(target, digest, size, was_cached=True)
 
-    log.info("download_started", url=url)
-    response = requests.get(url, timeout=120, stream=True)
+    log.info("download_started", url=url, expected_mb=1598)
+
+    # Streamed to a partial file and renamed only after verification. An
+    # interrupted download must never be mistaken for a cached one on the next
+    # run — that failure is silent and extremely annoying to diagnose.
+    partial = target.with_suffix(target.suffix + ".partial")
+    response = requests.get(url, timeout=300, stream=True)
     response.raise_for_status()
 
-    with archive.open("wb") as fh:
+    written = 0
+    with partial.open("wb") as fh:
         for chunk in response.iter_content(chunk_size=_CHUNK):
+            if not chunk:
+                continue
             fh.write(chunk)
+            written += len(chunk)
+            if written % (256 * 1024 * 1024) < _CHUNK:
+                log.info("download_progress", mb=round(written / 1e6))
 
-    digest = sha256_of(archive)
+    digest = sha256_of(partial)
+    if recorded is not None and digest != recorded:
+        partial.unlink(missing_ok=True)
+        raise ChecksumMismatchError(
+            f"downloaded file does not match the recorded checksum.\n"
+            f"  expected {recorded}\n  actual   {digest}\n"
+            "The mirror changed. The partial download has been deleted."
+        )
+
+    partial.replace(target)
+    verify_schema(target)
 
     if recorded is None:
-        record_checksum(archive.name, digest)
-        log.info(
-            "checksum_recorded",
-            file=archive.name,
-            sha256=digest,
-            note="first download — commit data/checksums.txt to pin it",
-        )
-    elif digest != recorded:
-        raise ChecksumMismatchError(
-            f"Downloaded archive does not match the committed checksum.\n"
-            f"  expected {recorded}\n  actual   {digest}\n"
-            "The upstream dataset changed. Do NOT silently accept this — every "
-            "metric in docs/DATA_AUDIT.md was computed against the recorded "
-            "version."
-        )
+        record_checksum(target.name, digest)
+        log.info("checksum_recorded", file=target.name, sha256=digest)
 
-    size_mb = archive.stat().st_size / 1e6
-    log.info("download_complete", file=archive.name, size_mb=round(size_mb, 2), sha256=digest)
-
-    return DownloadResult(archive, digest, _extract(archive, raw_dir), was_cached=False)
-
-
-def _extract(archive: Path, dest: Path) -> tuple[Path, ...]:
-    """Extract expected members, refusing anything that escapes ``dest``."""
-    extracted: list[Path] = []
-    with zipfile.ZipFile(archive) as zf:
-        names = zf.namelist()
-        for member in EXPECTED_MEMBERS:
-            match = next((n for n in names if n.endswith(member)), None)
-            if match is None:
-                raise FileNotFoundError(
-                    f"{member} not found in {archive.name}. Archive contents: {names}"
-                )
-            # Zip-slip guard: a crafted archive can otherwise write outside dest.
-            target = (dest / Path(match).name).resolve()
-            if not target.is_relative_to(dest.resolve()):
-                raise ValueError(f"Refusing to extract outside {dest}: {match}")
-            with zf.open(match) as src, target.open("wb") as out:
-                out.write(src.read())
-            extracted.append(target)
-            log.info("extracted", file=target.name, size_kb=round(target.stat().st_size / 1e3))
-    return tuple(extracted)
+    size = target.stat().st_size
+    log.info("download_complete", file=target.name, sha256=digest, size_mb=size / 1e6)
+    return DownloadResult(target, digest, size, was_cached=False)
 
 
 __all__ = [
-    "CHECKSUM_FILE",
+    "REQUIRED_COLUMNS",
     "ChecksumMismatchError",
     "DownloadResult",
+    "SchemaMismatchError",
     "download",
     "read_recorded_checksum",
     "record_checksum",
     "sha256_of",
+    "verify_schema",
 ]

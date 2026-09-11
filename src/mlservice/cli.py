@@ -79,7 +79,8 @@ def data_download(
     with request_context():
         result = download(force=force)
     typer.secho(
-        f"  OK    {result.archive.name} ({'cached' if result.was_cached else 'downloaded'})",
+        f"  OK    {result.path.name} ({'cached' if result.was_cached else 'downloaded'}), "
+        f"{result.size_mb} MB",
         fg=typer.colors.GREEN,
     )
     typer.echo(f"        sha256 {result.sha256}")

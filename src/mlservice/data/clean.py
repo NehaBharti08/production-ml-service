@@ -1,15 +1,24 @@
-"""Cleaning: leakage removal, missingness handling, diagnosis grouping.
+"""Cleaning: resolve the label, remove leakage, and honour right-censoring.
 
-Every step returns a record of what it did, so ``docs/DATA_AUDIT.md`` is
-generated from the actual run rather than transcribed by hand. A hand-written
-audit drifts from the code the first time anyone changes a threshold.
+Three of these steps change the answer materially, and each is here because the
+audit found something rather than because a tutorial said to.
 
-The ordering of steps matters and is deliberate:
+**Leakage.** Thirty-one columns in this file are knowable only *after* the loan
+has run. ``recoveries > 0`` means the loan defaulted; ``total_rec_prncp`` is how
+much principal came back. They look like ordinary loan attributes, which is
+precisely why they are enumerated in config rather than left to judgment. A
+model trained with them reports near-perfect accuracy and is worthless.
 
-1. Exclude expired/hospice discharges  — before anything measures a rate
-2. Deduplicate to first encounter       — before the split, so it cannot straddle
-3. Normalise missingness                — before any encoder sees a "?"
-4. Group diagnoses                      — 717 ICD-9 codes into clinical bands
+**Right-censoring.** 38.9% of loans are still ``Current``. A loan issued in
+December 2018 has not had time to default, so its absence of default is not
+evidence of repayment. Treating ``Current`` as a negative would teach the model
+that recent loans are safe — which is not a fact about lending, it is a fact
+about when the file was exported.
+
+**Unresolved is not negative.** Only terminal statuses become labels. ``Late``
+and ``In Grace Period`` are dropped rather than guessed at: a loan 90 days late
+will *probably* charge off, but "probably" is not a label, and encoding the
+guess would bake an assumption into the ground truth where nobody could see it.
 """
 
 from __future__ import annotations
@@ -19,7 +28,7 @@ from typing import Any
 
 import pandas as pd
 
-from mlservice.data import schema
+from mlservice.config import get_settings
 from mlservice.logging_ import get_logger
 
 log = get_logger(__name__)
@@ -42,204 +51,201 @@ class CleaningReport:
         return self.rows_in - self.rows_out
 
 
-def binarise_target(df: pd.DataFrame) -> pd.Series:
-    """``readmitted`` -> 1 if readmitted within 30 days, else 0.
+def parse_issue_date(df: pd.DataFrame) -> pd.Series:
+    """``issue_d`` ("Dec-2018") -> a real timestamp.
 
-    ``>30`` collapses into the negative class with ``NO``. The clinical and
-    operational question is specifically *early* readmission — that is what
-    quality programmes penalise and what an intervention could plausibly
-    prevent. A three-class model would answer a question nobody asked.
+    Parsed with an explicit format rather than letting pandas infer. Inference
+    on 2.26M rows is slow, and worse, it can silently switch interpretation
+    partway through a column.
     """
-    return (df[schema.TARGET] == schema.POSITIVE_LABEL).astype("int8")
-
-
-def drop_excluded_discharges(df: pd.DataFrame, report: CleaningReport) -> pd.DataFrame:
-    """Remove expired and hospice discharges.
-
-    Two distinct reasons, kept distinct because conflating them overstates the
-    leakage finding:
-
-    *   **Expired** (11, 19, 20, 21) is genuine label leakage. A dead patient
-        cannot be readmitted; the label is deterministically negative and a
-        model learns "died -> not readmitted" from the discharge code.
-    *   **Hospice** (13, 14) is not leakage — these patients *are* readmitted,
-        at 4.76% and 6.45%. They are excluded on clinical-relevance grounds:
-        readmission is not a meaningful quality signal in end-of-life care.
-    """
-    y = binarise_target(df)
-
-    expired = df[schema.ADMINISTRATIVE_FEATURES[1]].isin(schema.EXPIRED_DISCHARGE_IDS)
-    hospice = df[schema.ADMINISTRATIVE_FEATURES[1]].isin(schema.HOSPICE_DISCHARGE_IDS)
-
-    report.record(
-        "exclude_expired",
-        reason="deterministic label — a dead patient cannot be readmitted",
-        n_rows=int(expired.sum()),
-        n_positive=int(y[expired].sum()),
-        positive_rate=round(float(y[expired].mean()), 6) if expired.any() else 0.0,
-        codes=list(schema.EXPIRED_DISCHARGE_IDS),
-        classification="LEAKAGE",
-    )
-    report.record(
-        "exclude_hospice",
-        reason="end-of-life care — readmission is not a quality signal here",
-        n_rows=int(hospice.sum()),
-        n_positive=int(y[hospice].sum()),
-        positive_rate=round(float(y[hospice].mean()), 6) if hospice.any() else 0.0,
-        codes=list(schema.HOSPICE_DISCHARGE_IDS),
-        classification="CLINICAL_JUDGEMENT",  # deliberately NOT called leakage
+    settings = get_settings()
+    return pd.to_datetime(
+        df[settings.data.time_column], format=settings.data.time_format, errors="coerce"
     )
 
-    return df.loc[~(expired | hospice)].copy()
 
-
-def keep_first_encounter(df: pd.DataFrame, report: CleaningReport) -> pd.DataFrame:
-    """Keep only each patient's earliest encounter.
-
-    101,766 encounters span ~71,518 patients. Without this, the same patient
-    appears on both sides of any split and the held-out estimate is inflated by
-    memorised patient-level idiosyncrasy rather than learned signal.
-
-    Costs the prior-utilisation richness of repeat visits, which is a real loss
-    — the audit reports an all-encounter sensitivity variant so the size of the
-    inflation is visible rather than assumed.
-    """
-    before = len(df)
-    out = (
-        df.sort_values(schema.ENCOUNTER_ID)
-        .drop_duplicates(subset=schema.PATIENT_ID, keep="first")
-        .copy()
+def parse_term_months(df: pd.DataFrame) -> pd.Series:
+    """`` 36 months`` -> 36. Note the leading space in the raw data."""
+    return pd.to_numeric(
+        df["term"].astype("string").str.strip().str.replace(" months", "", regex=False),
+        errors="coerce",
     )
+
+
+def resolve_label(df: pd.DataFrame, report: CleaningReport) -> pd.DataFrame:
+    """Keep only terminal outcomes and turn them into a binary target.
+
+    Nine statuses exist; five are terminal. The other four — Current, Late
+    (16-30), Late (31-120), In Grace Period — describe loans still in flight.
+    Dropping them costs rows and buys a label that means what it says.
+    """
+    settings = get_settings()
+    bad = set(settings.data.loan_status_bad)
+    good = set(settings.data.loan_status_good)
+
+    status = df[settings.data.target_column]
+    terminal = status.isin(bad | good)
+
+    unresolved = status[~terminal].value_counts().to_dict()
+    out = df.loc[terminal].copy()
+    out["target"] = status.loc[terminal].isin(bad).astype("int8")
+
     report.record(
-        "first_encounter_only",
-        reason="prevent the same patient straddling the split",
-        rows_before=before,
+        "resolve_label",
+        reason="only terminal outcomes can be labelled; in-flight loans are not negatives",
+        rows_before=len(df),
         rows_after=len(out),
-        rows_removed=before - len(out),
-        unique_patients=int(df[schema.PATIENT_ID].nunique()),
+        rows_dropped=len(df) - len(out),
+        dropped_by_status={str(k): int(v) for k, v in unresolved.items()},
+        positive_rate=round(float(out["target"].mean()), 6),
     )
     return out
 
 
-def normalise_missing(df: pd.DataFrame, report: CleaningReport) -> pd.DataFrame:
-    """Turn sentinels into explicit categories. Never impute.
+def drop_immature_loans(df: pd.DataFrame, report: CleaningReport) -> pd.DataFrame:
+    """Keep only loans whose full term has elapsed by the observation date.
 
-    Two different kinds of absence, handled differently because they mean
-    different things:
+    **The most consequential rule in the pipeline.** Resolution is a function of
+    age, so without this the label is contaminated by export date:
 
-    *   ``"?"`` -> ``"Unknown"``. Not recorded.
-    *   ``NaN`` in a lab column -> ``"NotMeasured"``. The test was not ordered,
-        which is a *clinical decision* and therefore informative. Imputing it
-        with a modal value would destroy real signal and invent a measurement
-        that was never taken.
+        2007-2013   100.0% of loans resolved
+        2016         67.5%
+        2017         38.2%
+        2018         11.4%   <- default rate also FALLS to 15.8%
+
+    That falling default rate is not lending improving. It is survivorship: in a
+    2018 cohort the only loans that have reached a terminal state are the ones
+    that resolved fastest, and they are not representative.
+
+    The rule is stated, not tuned — issue date plus term must be at or before
+    the last observation in the file. A cut chosen to make the numbers look
+    better would be exactly the kind of thing this project exists to avoid.
     """
-    out = df.copy()
-    detail: dict[str, dict[str, Any]] = {}
+    settings = get_settings()
+    if not settings.data.require_matured_term:
+        report.record("drop_immature_loans", skipped=True, reason="disabled in config")
+        return df
 
-    for col in out.columns:
-        if out[col].dtype == object:
-            n = int((out[col] == schema.MISSING_SENTINEL).sum())
-            if n:
-                out[col] = out[col].replace(schema.MISSING_SENTINEL, schema.UNKNOWN_CATEGORY)
-                detail[col] = {
-                    "sentinel": n,
-                    "pct": round(n / len(out) * 100, 2),
-                    "action": "-> Unknown category",
-                }
+    observation_end = pd.Timestamp(settings.data.observation_end)
+    issued = parse_issue_date(df)
+    term = parse_term_months(df)
+    matures = issued + pd.to_timedelta(term * 30.44, unit="D")
 
-    for col in schema.NOT_MEASURED_COLUMNS:
-        if col in out.columns:
-            n = int(out[col].isna().sum())
-            if n:
-                out[col] = out[col].fillna(schema.NOT_MEASURED_CATEGORY)
-                detail[col] = {
-                    "native_nan": n,
-                    "pct": round(n / len(out) * 100, 2),
-                    "action": "-> NotMeasured category (test not ordered)",
-                }
+    mature = matures <= observation_end
+    kept = df.loc[mature.fillna(False)].copy()
 
-    report.record("normalise_missing", columns_affected=len(detail), detail=detail)
-    return out
-
-
-def group_diagnoses(df: pd.DataFrame, report: CleaningReport) -> pd.DataFrame:
-    """Collapse ICD-9 codes into clinical bands.
-
-    ``diag_1`` alone has 717 distinct values, many with a handful of rows.
-    One-hot encoding raw codes would produce a very wide, very sparse matrix
-    whose rare columns are pure noise under any split.
-
-    Bands follow the grouping used in the original Strack et al. (2014) paper,
-    so the results stay comparable to the published literature.
-    """
-    out = df.copy()
-
-    def band(code: object) -> str:
-        text = str(code)
-        if text in ("Unknown", "?", "nan", "None"):
-            return "Unknown"
-        # V codes (supplementary) and E codes (external cause) are not numeric.
-        if text.startswith(("V", "E")):
-            return "Other"
-        try:
-            value = float(text)
-        except ValueError:
-            return "Other"
-        if 390 <= value <= 459 or value == 785:
-            return "Circulatory"
-        if 460 <= value <= 519 or value == 786:
-            return "Respiratory"
-        if 520 <= value <= 579 or value == 787:
-            return "Digestive"
-        if int(value) == 250:
-            return "Diabetes"
-        if 800 <= value <= 999:
-            return "Injury"
-        if 710 <= value <= 739:
-            return "Musculoskeletal"
-        if 580 <= value <= 629 or value == 788:
-            return "Genitourinary"
-        if 140 <= value <= 239:
-            return "Neoplasms"
-        return "Other"
-
-    cardinality_before = {c: int(out[c].nunique()) for c in schema.DIAGNOSIS_FEATURES}
-    for col in schema.DIAGNOSIS_FEATURES:
-        out[col] = out[col].map(band)
+    by_year_before = issued.dt.year.value_counts().sort_index()
+    by_year_after = parse_issue_date(kept).dt.year.value_counts().sort_index()
 
     report.record(
-        "group_diagnoses",
-        reason="717 raw ICD-9 codes would one-hot into mostly-noise columns",
-        cardinality_before=cardinality_before,
-        cardinality_after={c: int(out[c].nunique()) for c in schema.DIAGNOSIS_FEATURES},
-        bands=sorted(out[schema.DIAGNOSIS_FEATURES[0]].unique().tolist()),
+        "drop_immature_loans",
+        rule="issue_d + term <= observation_end",
+        observation_end=str(observation_end.date()),
+        rows_before=len(df),
+        rows_after=len(kept),
+        rows_dropped=int(len(df) - len(kept)),
+        positive_rate_before=round(float(df["target"].mean()), 6),
+        positive_rate_after=round(float(kept["target"].mean()), 6),
+        latest_issue_kept=str(parse_issue_date(kept).max().date()),
+        years_before=len(by_year_before),
+        years_after=len(by_year_after),
+    )
+    return kept
+
+
+def drop_leaking_columns(df: pd.DataFrame, report: CleaningReport) -> pd.DataFrame:
+    """Remove every column knowable only after origination.
+
+    Enumerated in config rather than inferred. A heuristic ("drop anything
+    correlated with the target") would also drop legitimately predictive
+    features, and would not explain itself to a reviewer.
+
+    ``recoveries`` is the clearest case: it is money clawed back after a
+    default, so a non-zero value *is* the label. But ``last_fico_range_high`` is
+    just as fatal and far less obvious — it is the borrower's credit score
+    measured after the loan has already gone wrong.
+    """
+    settings = get_settings()
+    leaking = [c for c in settings.data.post_origination_columns if c in df.columns]
+    out = df.drop(columns=leaking)
+
+    report.record(
+        "drop_leaking_columns",
+        reason="knowable only after origination; several encode the outcome directly",
+        columns_dropped=len(leaking),
+        columns=sorted(leaking),
+        columns_remaining=len(out.columns),
     )
     return out
 
 
-def drop_unusable_columns(df: pd.DataFrame, report: CleaningReport) -> pd.DataFrame:
-    """Drop columns that cannot legitimately contribute, each with its reason."""
-    present = [c for c in schema.DROPPED_COLUMNS if c in df.columns]
+def drop_identifier_columns(df: pd.DataFrame, report: CleaningReport) -> pd.DataFrame:
+    """Remove ids, urls and free text.
+
+    Three different reasons, kept distinct: identifiers carry no signal, urls
+    are constant, and the free-text fields (``desc``, ``emp_title``, ``title``)
+    would turn a deliberately boring tabular model into an NLP project. That is
+    a legitimate thing to build — it is not what this project is demonstrating.
+
+    ``zip_code`` goes too. It is truncated to three digits, so it is a coarse
+    geography already covered by ``addr_state``, and it invites a fair-lending
+    problem for no modelling gain.
+    """
+    settings = get_settings()
+    dropped = [c for c in settings.data.identifier_columns if c in df.columns]
+    out = df.drop(columns=dropped)
+
     report.record(
-        "drop_columns",
-        columns={c: schema.DROPPED_COLUMNS[c] for c in present},
-        n_dropped=len(present),
+        "drop_identifier_columns",
+        reason="no signal, constant, or free text outside this project's scope",
+        columns=sorted(dropped),
+        columns_remaining=len(out.columns),
     )
-    return df.drop(columns=present)
+    return out
+
+
+def drop_sparse_columns(
+    df: pd.DataFrame, report: CleaningReport, threshold: float = 0.5
+) -> pd.DataFrame:
+    """Drop columns more than ``threshold`` missing.
+
+    Lending Club added fields over the years, so a column introduced in 2015 is
+    absent for every loan before it. That missingness is *structural* — it
+    encodes the era, not the borrower — and under a chronological split a model
+    would learn it as a proxy for time. Exactly the trap ``payer_code`` set in
+    the medical version of this project.
+    """
+    missing = df.isna().mean()
+    sparse = sorted(missing[missing > threshold].index)
+    out = df.drop(columns=sparse)
+
+    report.record(
+        "drop_sparse_columns",
+        reason="structurally missing by era; under a chronological split these proxy for time",
+        threshold=threshold,
+        columns_dropped=len(sparse),
+        worst=[
+            {"column": c, "missing_pct": round(float(missing[c]) * 100, 2)} for c in sparse[:10]
+        ],
+        columns_remaining=len(out.columns),
+    )
+    return out
 
 
 def clean(df: pd.DataFrame) -> tuple[pd.DataFrame, CleaningReport]:
-    """Run the full cleaning pipeline and return the data plus its report."""
+    """Run the full cleaning pipeline and return the data plus its report.
+
+    Order matters. The label is resolved first because maturity filtering needs
+    it to report the before/after positive rate; leakage is dropped before
+    sparsity so that a leaking column is never retained merely for being dense.
+    """
     report = CleaningReport(rows_in=len(df))
 
-    out = drop_excluded_discharges(df, report)
-    out = keep_first_encounter(out, report)
-    out = normalise_missing(out, report)
-    out = group_diagnoses(out, report)
-    out = drop_unusable_columns(out, report)
-
-    out["target"] = binarise_target(out)
-    out = out.drop(columns=[schema.TARGET])
+    out = resolve_label(df, report)
+    out = drop_immature_loans(out, report)
+    out = drop_leaking_columns(out, report)
+    out = drop_identifier_columns(out, report)
+    out = drop_sparse_columns(out, report)
 
     report.rows_out = len(out)
     report.record(
@@ -249,17 +255,19 @@ def clean(df: pd.DataFrame) -> tuple[pd.DataFrame, CleaningReport]:
         rows_removed=report.rows_removed,
         pct_removed=round(report.rows_removed / report.rows_in * 100, 2),
         positive_rate=round(float(out["target"].mean()), 6),
+        columns=len(out.columns),
     )
     return out, report
 
 
 __all__ = [
     "CleaningReport",
-    "binarise_target",
     "clean",
-    "drop_excluded_discharges",
-    "drop_unusable_columns",
-    "group_diagnoses",
-    "keep_first_encounter",
-    "normalise_missing",
+    "drop_identifier_columns",
+    "drop_immature_loans",
+    "drop_leaking_columns",
+    "drop_sparse_columns",
+    "parse_issue_date",
+    "parse_term_months",
+    "resolve_label",
 ]
