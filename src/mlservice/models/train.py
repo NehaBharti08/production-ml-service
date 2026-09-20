@@ -47,10 +47,11 @@ def candidates(seed: int) -> list[Candidate]:
 
     XGBoost is deliberately absent. The plan admitted it only on audit evidence
     of non-linear structure worth the operational cost, and the audit produced
-    the opposite: an unconstrained decision tree — which can represent arbitrary
-    interactions — reached 0.519 test ROC-AUC. There is no non-linear signal
-    going unexploited, so adding a gradient booster would buy dependency weight
-    and opacity for nothing. Recorded in docs/DECISIONS/0005-model-selection.md.
+    the opposite: an unconstrained decision tree — 66 deep with 45,210 leaves,
+    able to represent arbitrary interactions — memorised the training set
+    completely (1.000) and reached 0.5335 on test. There is no non-linear
+    signal going unexploited, so a gradient booster would buy dependency weight
+    and opacity for nothing. See docs/DECISIONS/0005-model-selection.md.
     """
     return [
         Candidate(
@@ -65,9 +66,9 @@ def candidates(seed: int) -> list[Candidate]:
                 penalty="l2",
                 C=1.0,
                 max_iter=2000,
-                # Weighting matters far more than the solver here: at a 7.6%
-                # positive rate, an unweighted fit optimises almost entirely for
-                # the negative class and produces a near-constant score.
+                # Weighting matters far more than the solver here: at a 14.8%
+                # positive rate, an unweighted fit optimises largely for the
+                # negative class and produces a compressed score range.
                 class_weight="balanced",
                 solver="lbfgs",
                 random_state=seed,

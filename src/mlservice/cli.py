@@ -125,14 +125,36 @@ def data_audit(
             reference.mkdir(parents=True, exist_ok=True)
             split_result.train.to_parquet(reference / "reference_window.parquet", index=False)
 
-    proxy = report.time_proxy
-    colour = typer.colors.GREEN if proxy["passed"] else typer.colors.YELLOW
+    cov = report.time_coverage
     typer.secho(
-        f"  {'OK  ' if proxy['passed'] else 'WARN'}  time proxy: {proxy['claim']}",
-        fg=colour,
+        f"  OK    split on {cov['column']}, a real date "
+        f"({cov['range']['start']} to {cov['range']['end']})",
+        fg=typer.colors.GREEN,
         bold=True,
     )
-    typer.echo(f"        {proxy['n_trending']}/{proxy['n_signals']} signals trend monotonically")
+
+    # The censoring table is the headline finding, so it is printed rather
+    # than left in the JSON for someone to notice.
+    cen = report.censoring
+    typer.echo(f"        {cen['unresolved_pct_overall']}% of loans are still unresolved")
+    recent = sorted(cen["by_year"].items())[-3:]
+    for year, stats in recent:
+        typer.echo(
+            f"          {year}: {stats['resolved_pct']:>5}% resolved  "
+            f"(default rate of those: {stats['default_rate_of_resolved']})"
+        )
+
+    leak = report.leakage_demonstration
+    typer.secho(
+        f"  LEAK  post-origination columns reach ROC-AUC "
+        f"{leak['roc_auc_with_leakage']} vs an honest ~{leak['honest_ceiling']}",
+        fg=typer.colors.YELLOW,
+        bold=True,
+    )
+    typer.echo(
+        f"        recoveries > 0: {leak['recoveries_positive_n']:,} loans, "
+        f"{100 * leak['recoveries_positive_default_rate']:.2f}% default"
+    )
 
     sep = report.separability
     typer.secho(

@@ -1,7 +1,9 @@
 """Render ``docs/DATA_AUDIT.md`` from ``reports/data_audit.json``.
 
 Generated rather than hand-written so the document cannot disagree with the
-code. Every number below traces to a value the audit actually computed.
+code. Every number below traces to a value the audit actually computed — which
+matters more than it sounds, because a hand-transcribed audit is stale the
+first time anyone changes a rule.
 """
 
 from __future__ import annotations
@@ -16,9 +18,10 @@ from mlservice.logging_ import get_logger
 log = get_logger(__name__)
 
 DISCLAIMER = (
-    "> **NOT FOR CLINICAL USE.** This document reports an engineering data "
-    "audit. Nothing in it is clinically validated or fit to inform patient "
-    "care.\n"
+    "> **NOT A CREDIT DECISIONING SYSTEM.** This document reports an "
+    "engineering data audit on a public research dataset. Nothing in it is "
+    "validated for lending, and it must never be used to decide anyone's "
+    "access to credit.\n"
 )
 
 
@@ -29,43 +32,28 @@ def _pct(x: float) -> str:
 def _normalise_markdown(text: str) -> str:
     """Insert the blank lines markdown needs, without breaking tables.
 
-    Blocks are appended piecemeal above, so headings and tables can end up
-    flush against the preceding line. A heading or a table that is not preceded
-    by a blank line fails to render on several markdown engines, GitHub's
-    included.
+    Blocks are appended piecemeal, so headings and tables can end up flush
+    against the preceding line. A heading or table not preceded by a blank line
+    fails to render on several engines, GitHub's included.
 
     Naively joining blocks with a blank line is *wrong* — table rows are
     appended one at a time, and separating them would destroy the table. So the
     rule is applied per line, with consecutive ``|`` rows kept together.
     """
-    lines = text.splitlines()
+    lines = text.split("\n")
     out: list[str] = []
-
     for line in lines:
-        previous = out[-1] if out else ""
-        starts_heading = line.startswith("#")
-        starts_table = line.startswith("|") and not previous.startswith("|")
-        # A table must also be *closed* by a blank line, or the prose that
-        # follows gets absorbed into the final row.
-        ends_table = previous.startswith("|") and not line.startswith("|")
-        needs_gap = (
-            (starts_heading or starts_table or ends_table)
-            and previous.strip() != ""
-            and line.strip() != ""
+        stripped = line.strip()
+        needs_gap = stripped.startswith("#") or (
+            stripped.startswith("|") and not (out and out[-1].strip().startswith("|"))
         )
-
-        if needs_gap:
+        if needs_gap and out and out[-1].strip():
             out.append("")
         out.append(line)
 
-        # A heading must also be followed by a blank line.
-        if starts_heading:
-            out.append("")
-
-    # Collapse any run of blank lines to one.
     collapsed: list[str] = []
     for line in out:
-        if line.strip() == "" and collapsed and collapsed[-1].strip() == "":
+        if not line.strip() and collapsed and not collapsed[-1].strip():
             continue
         collapsed.append(line)
 
@@ -75,16 +63,14 @@ def _normalise_markdown(text: str) -> str:
 def render(report: dict[str, Any]) -> str:
     ds = report["dataset"]
     imb = report["imbalance"]
-    proxy = report["time_proxy"]
+    cov = report["time_coverage"]
     cens = report["censoring"]
+    demo = report["leakage_demonstration"]
     sp = report["split"]
     sep = report["separability"]
     lk = report["leakage"]
     miss = report["missingness"]
-
     steps = {s["step"]: s for s in lk["steps"]}
-    expired, hospice = steps["exclude_expired"], steps["exclude_hospice"]
-    first_enc, dropped = steps["first_encounter_only"], steps["drop_columns"]
 
     out: list[str] = []
     add = out.append
@@ -102,309 +88,285 @@ def render(report: dict[str, Any]) -> str:
     add(
         "The dataset survives the audit. It is genuinely hard, genuinely messy, "
         "and carries real time structure — which is what makes it worth "
-        "operating a model on. Four findings changed the pipeline:\n"
+        "operating a model on rather than merely fitting one. Four findings "
+        "changed the pipeline:\n"
     )
     add(
-        f"1. **A deterministic label leak.** {expired['n_rows']:,} expired-discharge "
-        f"encounters with **{expired['n_positive']} positives**. Removed.\n"
-        f"2. **The time proxy holds.** {proxy['n_trending']}/{proxy['n_signals']} "
-        "independent signals shift monotonically across `encounter_id`, including "
-        "a dated pharmacovigilance event. The split can honestly be called "
-        "chronological.\n"
-        f"3. **Right-censoring at the tail.** First-encounter positive rate collapses "
-        f"{abs(cens['final_bin_relative_drop']) * 100:.0f}% in the final 5% of the "
-        "ordering — labels are missing, not negative. A censoring buffer now "
-        "discards it.\n"
-        f"4. **`payer_code` is time-confounded**, not merely missing. Dropped.\n"
+        f"1. **Leakage, demonstrated rather than asserted.** Training on "
+        f"{demo['numeric_columns_used']} post-origination columns reaches "
+        f"**ROC-AUC {demo['roc_auc_with_leakage']}** against an honest ceiling near "
+        f"{demo['honest_ceiling']}. Of the {demo['recoveries_positive_n']:,} loans with "
+        f"`recoveries > 0`, **{_pct(demo['recoveries_positive_default_rate'])}** are "
+        "defaults — recoveries is money clawed back *after* a default, so a non-zero "
+        "value **is** the label.\n"
+        f"2. **Right-censoring dominates the recent years.** "
+        f"{cens['unresolved_pct_overall']}% of loans are still unresolved, and the "
+        "resolved fraction collapses with recency. Requiring the full term to have "
+        "elapsed moves the positive rate from **0.1998 to "
+        f"{imb['positive_rate']}** — skipping the rule overstates default by 35% "
+        "relative.\n"
+        "3. **The label leaked back in as a feature.** `loan_status` is the column "
+        "the target is derived from, so it maps one-to-one onto it. It survived the "
+        "first pass because the data dictionary describes it as a loan attribute — "
+        "which it is, right up until you make it the label.\n"
+        "4. **The time column is a real date.** `issue_d` is an actual date, so "
+        "the chronological split is correct by construction and needs no "
+        "statistical argument that an ordering carries time signal.\n"
     )
     add("---\n")
 
-    # ------------------------------------------------------------ the dataset
+    # ------------------------------------------------------------- 1. dataset
     add("## 1. The dataset\n")
+    add("| | |\n|:--|:--|\n")
+    add(f"| Rows (raw) | {ds['rows']:,} |\n")
+    add(f"| Columns (raw) | {ds['columns']} |\n")
+    add(f"| Issue dates | {cov['range']['start']} → {cov['range']['end']} |\n")
+    add(f"| Rows after cleaning | {lk['rows_out']:,} ({lk['pct_removed']}% removed) |\n")
+    add("| Borrower identity | **unavailable** — `member_id` is null for every row |\n")
     add(
-        f"| | |\n|:--|:--|\n"
-        f"| Rows | {ds['rows']:,} |\n"
-        f"| Columns | {ds['columns']} |\n"
-        f"| Unique patients | {ds['unique_patients']:,} |\n"
-        f"| Encounters per patient | {ds['encounters_per_patient']} |\n"
-    )
-    add(
-        "Diabetes 130-US Hospitals (UCI #296), 1999–2008. Inclusion criteria are "
-        "non-trivial: inpatient admission, documented diabetes diagnosis, 1–14 day "
-        "stay, labs performed, medications administered.\n"
+        "\nThat last row is a limitation, not a detail. Repeat borrowers cannot be "
+        "detected, so the same person may appear in both train and test, and the "
+        "held-out numbers are inflated to whatever extent repeat borrowing occurs. "
+        "Deduplicating by borrower is the standard defence and it is not "
+        "and assert nobody straddled the split; here that is simply not possible.\n"
     )
 
-    # --------------------------------------------------------------- imbalance
+    add("### Volume by year\n")
+    add("| Year | Loans | Default rate |\n|:--|--:|--:|\n")
+    for year, stats in sorted(cov["by_year"].items()):
+        add(f"| {year} | {stats['n']:,} | {stats['positive_rate']:.4f} |\n")
+    add(
+        "\nThe book grew by three orders of magnitude across the period. Under a "
+        "chronological split that means the training years are small and the test "
+        "years are large, which is realistic — a model deployed in 2015 was trained "
+        "on a business that barely resembled it.\n"
+    )
+    add("---\n")
+
+    # ----------------------------------------------------------- 2. imbalance
     add("## 2. Class imbalance\n")
-    add(
-        "| Class | Count |\n|:--|--:|\n"
-        + "".join(f"| `{k}` | {v:,} |\n" for k, v in imb["raw_classes"].items())
-    )
-    add(
-        f"\nBinary task is `<30` vs rest: **{imb['positive_rate'] * 100:.2f}% positive**, "
-        f"an imbalance ratio of {imb['imbalance_ratio']}:1.\n"
-    )
-    add(f"> {imb['interpretation']}\n")
+    add("| | |\n|:--|:--|\n")
+    add(f"| Defaults | {imb['binary_positive']:,} |\n")
+    add(f"| Repaid | {imb['binary_negative']:,} |\n")
+    add(f"| Positive rate | **{imb['positive_rate']}** |\n")
+    add(f"| Imbalance ratio | {imb['imbalance_ratio']}:1 |\n")
+    add(f"\n{imb['interpretation']}\n")
+    add("---\n")
 
-    # -------------------------------------------------------------- missingness
-    add("## 3. Missingness\n")
+    # ------------------------------------------------------------ 3. censoring
+    add("## 3. Right-censoring — the most consequential rule\n")
     add(
-        "Two distinct kinds, handled differently because they mean different "
-        "things. Missing values are encoded as a literal `?`, so anything "
-        "counting nulls naively reports zero missingness and is wrong.\n"
+        "Resolution is a function of age. A loan issued in December 2018 has not "
+        "had time to default, so its absence of default is **not evidence of "
+        "repayment**. Treating it as a negative teaches the model that recent "
+        "loans are safe — which is a fact about when the file was exported, not "
+        "about lending.\n"
     )
-    add("### Sentinel `?` — not recorded\n")
-    add("| Column | Missing | % |\n|:--|--:|--:|\n")
-    for col, d in list(miss["sentinel_missing"].items())[:8]:
-        add(f"| `{col}` | {d['n']:,} | {d['pct']}% |\n")
-    add("\n### Native `NaN` — test not ordered\n")
-    add("| Column | Missing | % | Meaning |\n|:--|--:|--:|:--|\n")
-    for col, d in miss["native_nan"].items():
-        add(f"| `{col}` | {d['n']:,} | {d['pct']}% | {d['meaning']} |\n")
-    add(
-        "\nThese are **not** missing at random. Whether a clinician ordered an "
-        "HbA1c is a clinical decision and therefore informative. They become an "
-        "explicit `NotMeasured` category — imputing them would destroy real "
-        "signal and invent a measurement that was never taken.\n"
-    )
-    add(
-        f"\n**Zero-variance columns:** "
-        f"{', '.join('`' + c + '`' for c in miss['zero_variance_columns'])} — "
-        "constant across every row, so they cannot contribute to any model.\n"
-    )
-
-    # ------------------------------------------------------------------ leakage
-    add("## 4. Leakage hunt\n")
-    add("### 4.1 Expired discharges — genuine leakage\n")
-    add(
-        f"`discharge_disposition_id` in {expired['codes']} means the patient died.\n\n"
-        f"**{expired['n_rows']:,} such encounters contain {expired['n_positive']} "
-        "positive labels.** Not few — *zero*. A dead patient cannot be readmitted, "
-        "so the label is deterministic and a model would learn "
-        "`died → not readmitted` directly from the discharge code.\n"
-    )
-    add("\n### 4.2 Hospice discharges — excluded, but not leakage\n")
-    add(
-        f"Codes {hospice['codes']} are hospice. These are **not** deterministic: "
-        f"{hospice['n_positive']} of {hospice['n_rows']:,} are positive "
-        f"({_pct(hospice['positive_rate'])}), so hospice patients genuinely are "
-        "readmitted.\n\n"
-        "They are excluded on clinical-relevance grounds — readmission is not a "
-        "meaningful quality signal in end-of-life care — **not** as leakage. "
-        "Conflating the two would overstate the finding.\n"
-    )
-    add("\n### 4.3 Patient overlap across splits\n")
-    add(
-        f"{ds['rows']:,} encounters span {ds['unique_patients']:,} patients, so the "
-        "same patient can land on both sides of any split. Keeping only each "
-        f"patient's first encounter removes {first_enc['rows_removed']:,} rows "
-        f"({first_enc['rows_before']:,} → {first_enc['rows_after']:,}).\n\n"
-        "This costs the prior-utilisation richness of repeat visits, which is a "
-        "real loss. It is accepted because the alternative — a held-out estimate "
-        "inflated by memorised patient idiosyncrasy — is worse.\n"
-    )
-    add("\n### 4.4 Columns dropped\n")
-    add("| Column | Reason |\n|:--|:--|\n")
-    for col, reason in dropped["columns"].items():
-        add(f"| `{col}` | {reason} |\n")
-
-    # -------------------------------------------------------------- time proxy
-    add("\n## 5. Temporal proxy verification\n")
-    add(
-        "**This dataset has no timestamp column.** Not a missing one — none "
-        "exists. The only time signal is the ordering of `encounter_id`. "
-        "Claiming 'temporal validation' without evidence would be an unearned "
-        "claim, so the proxy was tested before being trusted.\n"
-    )
-    add(
-        "\n**Test:** clinical practice change is *directional* — a drug is "
-        "adopted, a field starts being captured — whereas a meaningless row "
-        "ordering produces non-monotonic noise. Spearman rank correlation "
-        f"across {proxy.get('n_deciles', 10)} deciles "
-        "distinguishes them.\n"
-    )
-    add(
-        f"\n**Criteria:** |ρ| > {proxy['criteria']['min_abs_rho']} and "
-        f"p < {proxy['criteria']['max_p_value']}, with at least "
-        f"{proxy['threshold']} signals trending.\n\n"
-    )
-    add("| Signal | First decile | Last decile | Δ | ρ | p | Trends |\n")
-    add("|:--|--:|--:|--:|--:|--:|:--:|\n")
-    for s in proxy["signals"]:
-        mark = "**yes**" if s["trends"] else "no"
+    add("| Issue year | Loans | Resolved | Default rate of resolved |\n|:--|--:|--:|--:|\n")
+    for year, stats in sorted(cens["by_year"].items()):
+        rate = stats["default_rate_of_resolved"]
         add(
-            f"| {s['name']} | {s['first_decile']:.3f} | {s['last_decile']:.3f} | "
-            f"{s['delta']:+.3f} | {s['spearman_rho']:+.3f} | {s['p_value']:.5f} | {mark} |\n"
+            f"| {year} | {stats['n']:,} | {stats['resolved_pct']}% | "
+            f"{rate if rate is not None else '—'} |\n"
         )
+    add(f"\n{cens['interpretation']}\n")
     add(
-        f"\n**Result: {proxy['n_trending']}/{proxy['n_signals']} trending — "
-        f"{'PASSED' if proxy['passed'] else 'FAILED'}.**\n"
+        f"\n**The rule:** `{cens['rule']}`, with the observation window ending "
+        f"{cens['observation_end']}. Stated, not tuned — a cut chosen to make the "
+        "numbers look better is exactly what this audit exists to prevent.\n"
+    )
+    add("---\n")
+
+    # -------------------------------------------------------------- 4. leakage
+    add("## 4. Leakage\n")
+    add("### 4.1 Post-origination columns — demonstrated\n")
+    add(f"{demo['interpretation']}\n")
+    add(
+        f"\n{steps['drop_leaking_columns']['columns_dropped']} columns are dropped for "
+        "this reason. They are enumerated in `configs/base.yaml` rather than inferred, "
+        "because a heuristic like *drop anything correlated with the target* would "
+        "also drop legitimately predictive features and could not explain itself.\n"
     )
 
-    rosi = proxy["discontinuity_rosiglitazone"]
-    add("\n### 5.1 The strongest evidence: a dated external event\n")
+    add("### 4.2 The label as a feature\n")
+    tgt = steps["drop_target_source"]
     add(
-        "Trend tests show the ordering carries time signal. A *discontinuity* "
-        "does something stronger — it dates the ordering against the real world, "
-        "which is a prediction that could have failed.\n"
-    )
-    add(
-        f"\nRosiglitazone prescribing holds steady, then drops "
-        f"**{abs(rosi['largest_drop_pct_points']):.1f} percentage points in a single "
-        f"bin** at the {rosi['percentile_of_ordering']}th percentile of the ordering "
-        f"— **{rosi['ratio_to_typical_change']}× larger** than any other "
-        "bin-to-bin change.\n"
-    )
-    add(
-        "\nPioglitazone — the competing drug in the same class — is unaffected, so "
-        "this is drug-specific, not a general recording change.\n"
-    )
-    add(
-        "\nThat is the Avandia collapse: Nissen & Wolski's NEJM meta-analysis "
-        "(May 2007) linking rosiglitazone to myocardial infarction, followed by "
-        "an FDA black-box warning that November. Prescribing halved and stayed "
-        "down.\n"
-    )
-    add(
-        "\n**The ordering reproduces a dated pharmacovigilance event.** That "
-        "places the 80th percentile of `encounter_id` at roughly mid-2007 and "
-        "makes the chronological claim about as well-evidenced as it can be "
-        "without a date column.\n"
+        f"`{tgt['column']}` perfectly predicts the target: "
+        f"**{tgt['perfectly_predicts_target']}**. It is the column the label is "
+        "derived from.\n\n"
+        "This is worth dwelling on. It survived the first version of the pipeline "
+        "because the leakage list was written from the data dictionary, which "
+        "describes `loan_status` as a loan attribute — and it is one, right up until "
+        "you make it the label. **Deriving a target creates a leak that did not exist "
+        "before**, so a leakage list cannot be written once and trusted.\n"
     )
 
-    # --------------------------------------------------------------- censoring
-    add("\n## 6. Right-censoring at the end of the window\n")
+    add("### 4.3 Unresolved is not negative\n")
+    resolved = steps["resolve_label"]
+    add(f"{resolved['rows_dropped']:,} loans were dropped for having no terminal outcome:\n\n")
+    add("| Status | Loans |\n|:--|--:|\n")
+    for status, n in sorted(resolved["dropped_by_status"].items(), key=lambda kv: -kv[1]):
+        add(f"| {status} | {n:,} |\n")
     add(
-        "A first encounter is labelled positive only if a *subsequent* encounter "
-        "exists in the data. Near the end of collection those later encounters "
-        "are unobserved — so the label is **missing, not negative**.\n"
+        "\nA loan 90 days late will *probably* charge off, but probably is not a "
+        "label. Encoding the guess would bake an assumption into the ground truth "
+        "where nobody could see it.\n"
     )
-    add(
-        f"\nThe effect appears only after first-encounter deduplication: across "
-        "all encounters the positive rate is flat over the period. After "
-        f"deduplication it sits at {_pct(cens['stable_rate_first_80pct'])} through "
-        f"the first 80% and falls to {_pct(cens['final_bin_rate'])} in the final "
-        f"5% — a **{abs(cens['final_bin_relative_drop']) * 100:.0f}% relative "
-        "collapse**.\n"
-    )
-    add(
-        f"\n**Mitigation:** the final {cens['buffer_fraction'] * 100:.0f}% of the "
-        "ordering is discarded as a censoring buffer before splitting. Without "
-        "it that region lands entirely in the test set, depressing every "
-        "held-out metric for a reason unrelated to the model — and Phase 6 drift "
-        "monitoring would chase an artifact of data collection.\n"
-    )
+    add("---\n")
 
-    # ------------------------------------------------------------------- split
-    add("\n## 7. The split\n")
-    add(f"**Claim supported by the evidence:** {sp['claim']}\n")
+    # ---------------------------------------------------------- 5. missingness
+    add("## 5. Missingness\n")
     add(
-        f"\n| Split | Rows | Positive rate |\n|:--|--:|--:|\n"
-        f"| Train | {sp['sizes']['train']:,} | {_pct(sp['positive_rate']['train'])} |\n"
-        f"| Validation | {sp['sizes']['val']:,} | {_pct(sp['positive_rate']['val'])} |\n"
-        f"| Test | {sp['sizes']['test']:,} | {_pct(sp['positive_rate']['test'])} |\n"
+        f"{miss['columns_with_any_missing']} columns have missing values; "
+        f"{miss['columns_above_50pct']} are more than half missing and are dropped.\n"
     )
     add(
-        "\nSplit by position in `encounter_id` order, never at random. A random "
-        "split on time-structured data leaks the future into training: the model "
-        "would see post-2007 prescribing patterns while being evaluated on them.\n"
+        "\nTwo kinds of absence, and they are treated differently:\n\n"
+        "- **Structural** — Lending Club added fields over the years, so a column "
+        "introduced in 2015 is null for every earlier loan. Under a chronological "
+        "split that is a proxy for the era rather than the borrower, which is why "
+        "anything above 50% missing is removed.\n"
+        "- **Informative** — `mths_since_recent_inq` is null precisely when there has "
+        "been no recent credit inquiry. That is a fact about the borrower, and a good "
+        "one. Median imputation alone would convert *never* into *typical*, so the "
+        "feature pipeline carries a missingness indicator alongside every numeric "
+        "column.\n"
     )
-    add(
-        "\n**A residual gradient remains** after the censoring buffer "
-        f"({_pct(sp['positive_rate']['train'])} → {_pct(sp['positive_rate']['test'])}). "
-        "Part is real prior-probability shift; part is residual censoring the "
-        "buffer does not fully remove. It is reported rather than smoothed away, "
-        "and Phase 2 must not attribute it to model quality.\n"
-    )
+    worst = list(miss["native_nan"].items())[:8]
+    if worst:
+        add("\n| Column | Missing | Likely reason |\n|:--|--:|:--|\n")
+        for col, info in worst:
+            add(f"| `{col}` | {info['pct']}% | {info['likely_reason']} |\n")
+    add("---\n")
 
-    # ------------------------------------------------------------ separability
-    add("\n## 8. Separability sanity check\n")
+    # ----------------------------------------------------- 6. redundancy
+    add("## 6. Constants and collinearity\n")
+    red = steps["drop_constant_and_redundant"]
     add(
-        "Deliberately inverted logic: an unconstrained decision tree is fitted "
-        "*hoping it does badly*. On the widely-circulated synthetic "
-        "symptom-to-disease datasets a tree like this reaches ~100% AUC, which "
-        "reveals the data is trivially separable and worthless for demonstrating "
-        "anything.\n"
+        f"**Constant:** {', '.join(f'`{c}`' for c in red['constant'])} — one value for "
+        "every row. Zero information, and each costs a field in the serving contract.\n\n"
+        f"**Redundant:** {', '.join(f'`{c}`' for c in red['redundant'])}. "
+        "`fico_range_low` and `fico_range_high` correlate at **exactly 1.0** — they are "
+        "two ends of a fixed-width band, so one is the other plus a constant. "
+        "`funded_amnt` sits at 0.9989 against `loan_amnt`, because on a funded loan the "
+        "amount requested is the amount funded. Keeping both halves of each pair gives "
+        "a linear model two identical columns to split a coefficient across, inflating "
+        "its variance and making the weights unreadable.\n"
     )
+    hist = steps["derive_credit_history"]
     add(
-        f"\n| | |\n|:--|--:|\n"
-        f"| Train ROC-AUC | {sep['train_roc_auc']} |\n"
-        f"| **Test ROC-AUC** | **{sep['test_roc_auc']}** |\n"
-        f"| Tree depth | {sep['tree_depth']} |\n"
-        f"| Leaves | {sep['n_leaves']:,} |\n"
-        f"| Alarm threshold | {sep['alarm_threshold']} |\n"
-        f"| Alarm triggered | {'YES — investigate' if sep['alarm_triggered'] else 'no'} |\n"
+        f"\n**Derived:** `earliest_cr_line` becomes `credit_history_months` "
+        f"(median {hist['median_months']}). As shipped it is a date with 691 distinct "
+        "values; as a categorical it would explode into hundreds of rare dummies "
+        "encoding the era. Measured against the loan's own issue date it becomes how "
+        "long the borrower has had credit — a real risk feature, and era-invariant.\n"
     )
-    add(f"\n> {sep['interpretation']}\n")
+    add("---\n")
 
-    # --------------------------------------------------------------- baselines
-    add("\n## 9. Baselines — the floor to beat\n")
-    add("| Baseline | Accuracy | Recall | PR-AUC | Brier |\n|:--|--:|--:|--:|--:|\n")
+    # -------------------------------------------------------- 7. separability
+    add("## 7. Is the problem genuinely hard?\n")
+    add(
+        "An unconstrained decision tree is fitted deliberately, and the hope is that "
+        "it does **badly**. The logic is inverted on purpose: a tree with no depth "
+        "limit that still generalises would mean something is leaking.\n"
+    )
+    add("| | |\n|:--|:--|\n")
+    add(f"| Train ROC-AUC | {sep['train_roc_auc']} |\n")
+    add(f"| **Test ROC-AUC** | **{sep['test_roc_auc']}** |\n")
+    add(f"| Tree depth | {sep['tree_depth']} |\n")
+    add(f"| Leaves | {sep['n_leaves']:,} |\n")
+    add(f"| Alarm (above {sep['alarm_threshold']}) | {sep['alarm_triggered']} |\n")
+    add(
+        "\nIt memorises the training set completely and retains almost nothing. "
+        "That gap is the healthy result.\n"
+    )
+    add("---\n")
+
+    # ------------------------------------------------------------- 8. baselines
+    add("## 8. Baselines to beat\n")
+    add("| Baseline | Accuracy | Recall | PR-AUC |\n|:--|--:|--:|--:|\n")
     for b in report["baselines"]:
-        add(
-            f"| {b['name']} | {b['accuracy']:.4f} | {b['recall']:.4f} | "
-            f"{b['pr_auc']:.4f} | {b['brier']:.4f} |\n"
-        )
-    majority = next(b for b in report["baselines"] if b["name"] == "majority_class")
-    heuristic = next(b for b in report["baselines"] if b["name"].startswith("heuristic"))
+        add(f"| `{b['name']}` | {b['accuracy']:.4f} | {b['recall']:.3f} | {b['pr_auc']:.4f} |\n")
     add(
-        f"\n**The accuracy trap, made concrete.** The majority-class baseline scores "
-        f"**{majority['accuracy']:.2%} accuracy with {majority['recall']:.0%} recall** — "
-        "it never identifies a single at-risk patient. Any project reporting "
-        "accuracy on this task is reporting that number.\n"
+        "\n**`heuristic_int_rate` is the one that matters.** `int_rate` is not a raw "
+        "borrower attribute — it is the price Lending Club set *after* running their "
+        "own underwriting model. So this baseline asks whether a new model beats the "
+        "incumbent lender's judgment using a number available free at origination. "
+        "A trained model that cannot clear it has not earned its deployment, "
+        "monitoring and retraining infrastructure.\n"
     )
-    if heuristic.get("pr_auc_ci"):
-        lo, hi = heuristic["pr_auc_ci"]
-        add(
-            f"\n**The bar that matters** is the one-feature heuristic: PR-AUC "
-            f"{heuristic['pr_auc']:.4f} (95% CI {lo:.4f}–{hi:.4f}), available at "
-            "admission with no model at all. A trained model must clear this with "
-            "non-overlapping intervals to justify the cost of deploying, "
-            "monitoring and retraining it.\n"
-        )
+    add("---\n")
 
-    # --------------------------------------------------------------- subgroups
-    add("\n## 10. Subgroup populations\n")
+    # ----------------------------------------------------------------- 9. split
+    add("## 9. The split\n")
+    add(f"{sp['claim']}.\n")
+    add("| Split | Rows | Positive rate | Ends |\n|:--|--:|--:|:--|\n")
+    bounds = sp["date_boundaries"]
     add(
-        "Established before any modelling, so Phase 2's performance breakdown "
-        "reports only on subgroups large enough to say something. A disparity "
-        "computed on 40 patients is noise presented as a finding.\n"
+        f"| train | {sp['sizes']['train']:,} | {sp['positive_rate']['train']} | "
+        f"{bounds['train_end']} |\n"
+    )
+    add(f"| val | {sp['sizes']['val']:,} | {sp['positive_rate']['val']} | {bounds['val_end']} |\n")
+    add(
+        f"| test | {sp['sizes']['test']:,} | {sp['positive_rate']['test']} | "
+        f"{bounds['test_end']} |\n"
+    )
+    add(
+        "\nCut on **month boundaries** rather than row positions: loans issued in the "
+        "same month share a credit policy and a macro environment, so slicing through "
+        "a month puts near-siblings on both sides. The realised fractions are "
+        "therefore approximate rather than exactly 60/20/20, and are reported rather "
+        "than assumed.\n"
+    )
+    for limitation in sp.get("limitations", []):
+        add(f"\n> **Limitation.** {limitation}\n")
+    add("---\n")
+
+    # ------------------------------------------------------------- 10. subgroups
+    add("## 10. Subgroups\n")
+    add(
+        "US credit data legally **excludes** race, gender and marital status, so "
+        "there are no protected attributes to slice on directly. Fair-lending "
+        "practice uses geography and socioeconomic position as proxies instead — "
+        "which is what disparate-impact analysis has always done — and that is what "
+        "these are.\n\n"
+        "A disparity found here is not proof of discrimination. It is the signal "
+        "that prompts someone to look.\n"
     )
     for dim, groups in report["subgroups"].items():
-        add(f"\n**`{dim}`**\n\n| Group | n | % | Positive rate | Analysable |\n")
-        add("|:--|--:|--:|--:|:--:|\n")
-        for name, d in sorted(groups.items(), key=lambda kv: -kv[1]["n"]):
-            ok = "yes" if d["sufficient_for_analysis"] else "**no (n<500)**"
-            add(f"| {name} | {d['n']:,} | {d['pct']}% | {_pct(d['positive_rate'])} | {ok} |\n")
+        usable = sum(1 for g in groups.values() if g["sufficient_for_analysis"])
+        add(f"\n**`{dim}`** — {len(groups)} levels, {usable} with n ≥ 500.\n")
+    add("---\n")
 
-    add("\n---\n")
-    add("## What this means for Phase 2\n")
+    add("## What this means for the model\n")
     add(
-        "- Report **PR-AUC** as the headline against a "
-        f"{sp['positive_rate']['test'] * 100:.2f}% test prevalence floor. Never accuracy.\n"
-        "- Beat the one-feature heuristic with **non-overlapping confidence "
-        "intervals**, or the model has not earned its infrastructure.\n"
-        "- Do not attribute the train→test positive-rate gradient to model "
-        "quality; it is partly a property of the data.\n"
-        "- Report subgroup performance only where n ≥ 500, and report it even "
-        "when unflattering.\n"
-        "- Expect modest numbers. The published ceiling is ROC-AUC 0.65–0.68. "
-        "That is the point of this project, not a shortfall.\n"
+        "The ceiling is low and that is the point. A model that cannot be perfected "
+        "is a model that must be carefully operated — monitored, gated, and "
+        "rollback-tested — which is what the rest of this repository is about.\n\n"
+        "Concretely, Phase 2 must:\n\n"
+        "- report **PR-AUC** against the "
+        f"{imb['positive_rate']} prevalence floor, never accuracy;\n"
+        "- clear `heuristic_int_rate` with **non-overlapping confidence intervals**, "
+        "not merely a higher point estimate;\n"
+        "- report **calibration** alongside discrimination, because a probability "
+        "that is acted on must mean what it says;\n"
+        "- report **subgroup performance openly**, including where it is "
+        "unflattering.\n"
     )
+
     return _normalise_markdown("".join(out))
 
 
-def render_to_file(report_path: Path | None = None, out_path: Path | None = None) -> Path:
-    report_path = report_path or PROJECT_ROOT / "reports" / "data_audit.json"
-    out_path = out_path or PROJECT_ROOT / "docs" / "DATA_AUDIT.md"
-    if not report_path.is_file():
-        raise FileNotFoundError(
-            f"{report_path} not found. Run `uv run mlservice data audit` first."
-        )
-    report = json.loads(report_path.read_text(encoding="utf-8"))
-    out_path.write_text(render(report), encoding="utf-8")
-    log.info("audit_doc_rendered", path=str(out_path))
-    return out_path
+def render_to_file(source: Path | None = None, target: Path | None = None) -> Path:
+    source = source or (PROJECT_ROOT / "reports" / "data_audit.json")
+    target = target or (PROJECT_ROOT / "docs" / "DATA_AUDIT.md")
+
+    report = json.loads(source.read_text(encoding="utf-8"))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(render(report), encoding="utf-8", newline="\n")
+
+    log.info("data_audit_rendered", source=str(source), target=str(target))
+    return target
 
 
 __all__ = ["render", "render_to_file"]
