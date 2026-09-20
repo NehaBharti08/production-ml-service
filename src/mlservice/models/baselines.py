@@ -79,14 +79,14 @@ def majority_class(y_true: np.ndarray) -> BaselineResult:
 
     return BaselineResult(
         name="majority_class",
-        description="Always predicts 'not readmitted'",
+        description="Always predicts 'never defaults'",
         accuracy=float((pred == y_true).mean()),
         recall=float(recall_score(y_true, pred, zero_division=0)),
         pr_auc=float(average_precision_score(y_true, score)),
         roc_auc=0.5,
         brier=float(brier_score_loss(y_true, score)),
         notes=(
-            "High accuracy, zero recall. It never identifies a single patient "
+            "High accuracy, zero recall. It never identifies a single borrower "
             "at risk. This is why accuracy is not reported as a headline metric "
             "for this task."
         ),
@@ -105,7 +105,7 @@ def prevalence_constant(y_true: np.ndarray) -> BaselineResult:
 
     return BaselineResult(
         name="prevalence_constant",
-        description=f"Predicts P(readmit)={prevalence:.4f} for every patient",
+        description=f"Predicts P(default)={prevalence:.4f} for every loan",
         accuracy=float((np.zeros_like(y_true) == y_true).mean()),
         recall=0.0,
         pr_auc=float(average_precision_score(y_true, score)),
@@ -119,37 +119,44 @@ def prevalence_constant(y_true: np.ndarray) -> BaselineResult:
 
 
 def single_feature_heuristic(
-    df: pd.DataFrame, y_true: np.ndarray, feature: str = "number_inpatient"
+    df: pd.DataFrame, y_true: np.ndarray, feature: str = "int_rate"
 ) -> BaselineResult:
-    """Rank by one clinically obvious feature — prior inpatient visits.
+    """Rank by the interest rate alone — the lender's own risk opinion.
 
-    This is the baseline that actually matters. Prior utilisation is the
-    strongest single predictor of readmission and is available at admission
-    with no modelling at all. A trained model that cannot beat *this* has not
-    earned its deployment, monitoring and retraining infrastructure.
+    **This is the baseline that actually matters, and it is a demanding one.**
+    ``int_rate`` is not a raw borrower attribute: it is the price Lending Club
+    set after running its own underwriting model. So this baseline asks
+    whether a new model beats the incumbent lender's judgment, using a number
+    available for free at origination.
+
+    A trained model that cannot beat *this* has not earned its deployment,
+    monitoring and retraining infrastructure. The medical equivalent was prior
+    inpatient visits; this one is stiffer, because a whole institution's
+    modelling effort is already baked into it.
     """
     score = df[feature].to_numpy(dtype=float)
-    threshold = float(np.percentile(score, 89))  # flag ~11%, matching prevalence
+    # Flag at the prevalence rate so the comparison is like-for-like.
+    threshold = float(np.percentile(score, 100 * (1 - y_true.mean())))
     pred = (score > threshold).astype(int)
 
-    normalised = (score - score.min()) / (score.max() - score.min() or 1)
+    spread = score.max() - score.min()
+    normalised = (score - score.min()) / (spread or 1)
     lower, upper = bootstrap_pr_auc_ci(y_true, normalised)
 
     return BaselineResult(
         name=f"heuristic_{feature}",
-        description=f"Ranks patients by {feature} (prior inpatient admissions)",
+        description=f"Ranks loans by {feature} — the lender's own priced risk",
         accuracy=float((pred == y_true).mean()),
         recall=float(recall_score(y_true, pred, zero_division=0)),
         pr_auc=float(average_precision_score(y_true, normalised)),
         roc_auc=float(roc_auc_score(y_true, normalised)),
-        brier=float(brier_score_loss(y_true, np.clip(normalised, 0, 1))),
+        brier=float(np.mean((normalised - y_true) ** 2)),
         pr_auc_ci=(lower, upper),
         notes=(
-            "The bar that matters. Available at admission with no model. Any "
-            "trained model must clear this with non-overlapping confidence "
-            "intervals to justify the operational cost of running it."
+            "The strongest trivial baseline here. int_rate encodes Lending Club's "
+            "own underwriting decision, so beating it means adding something their "
+            "model did not already capture."
         ),
-        extra={"threshold": threshold, "flagged_pct": round(float(pred.mean()) * 100, 2)},
     )
 
 

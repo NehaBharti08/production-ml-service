@@ -1,595 +1,1591 @@
 {
   "dataset": {
-    "rows": 101766,
-    "columns": 50,
-    "unique_patients": 71518,
-    "encounters_per_patient": 1.423,
+    "rows": 2260701,
+    "columns": 151,
+    "borrower_identity_available": false,
+    "loans_per_borrower": null,
     "matches_expected_shape": true
   },
   "missingness": {
-    "sentinel_missing": {
-      "weight": {
-        "n": 98569,
-        "pct": 96.86
-      },
-      "medical_specialty": {
-        "n": 49949,
-        "pct": 49.08
-      },
-      "payer_code": {
-        "n": 40256,
-        "pct": 39.56
-      },
-      "race": {
-        "n": 2273,
-        "pct": 2.23
-      },
-      "diag_3": {
-        "n": 1423,
-        "pct": 1.4
-      },
-      "diag_2": {
-        "n": 358,
-        "pct": 0.35
-      },
-      "diag_1": {
-        "n": 21,
-        "pct": 0.02
-      }
-    },
     "native_nan": {
-      "max_glu_serum": {
-        "n": 96420,
-        "pct": 94.75,
-        "meaning": "test not ordered \u2014 a clinical decision, therefore informative"
+      "member_id": {
+        "n": 2260701,
+        "pct": 100.0,
+        "likely_reason": "structural \u2014 field added partway through the period"
       },
-      "A1Cresult": {
-        "n": 84748,
-        "pct": 83.28,
-        "meaning": "test not ordered \u2014 a clinical decision, therefore informative"
+      "orig_projected_additional_accrued_interest": {
+        "n": 2252050,
+        "pct": 99.62,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "hardship_type": {
+        "n": 2249784,
+        "pct": 99.52,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "hardship_reason": {
+        "n": 2249784,
+        "pct": 99.52,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "hardship_status": {
+        "n": 2249784,
+        "pct": 99.52,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "deferral_term": {
+        "n": 2249784,
+        "pct": 99.52,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "hardship_amount": {
+        "n": 2249784,
+        "pct": 99.52,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "hardship_start_date": {
+        "n": 2249784,
+        "pct": 99.52,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "hardship_end_date": {
+        "n": 2249784,
+        "pct": 99.52,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "payment_plan_start_date": {
+        "n": 2249784,
+        "pct": 99.52,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "hardship_length": {
+        "n": 2249784,
+        "pct": 99.52,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "hardship_dpd": {
+        "n": 2249784,
+        "pct": 99.52,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "hardship_loan_status": {
+        "n": 2249784,
+        "pct": 99.52,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "hardship_payoff_balance_amount": {
+        "n": 2249784,
+        "pct": 99.52,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "hardship_last_payment_amount": {
+        "n": 2249784,
+        "pct": 99.52,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "debt_settlement_flag_date": {
+        "n": 2226455,
+        "pct": 98.49,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "settlement_status": {
+        "n": 2226455,
+        "pct": 98.49,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "settlement_date": {
+        "n": 2226455,
+        "pct": 98.49,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "settlement_amount": {
+        "n": 2226455,
+        "pct": 98.49,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "settlement_percentage": {
+        "n": 2226455,
+        "pct": 98.49,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "settlement_term": {
+        "n": 2226455,
+        "pct": 98.49,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "sec_app_mths_since_last_major_derog": {
+        "n": 2224759,
+        "pct": 98.41,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "sec_app_revol_util": {
+        "n": 2154517,
+        "pct": 95.3,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "revol_bal_joint": {
+        "n": 2152681,
+        "pct": 95.22,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "sec_app_fico_range_low": {
+        "n": 2152680,
+        "pct": 95.22,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "sec_app_fico_range_high": {
+        "n": 2152680,
+        "pct": 95.22,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "sec_app_earliest_cr_line": {
+        "n": 2152680,
+        "pct": 95.22,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "sec_app_inq_last_6mths": {
+        "n": 2152680,
+        "pct": 95.22,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "sec_app_mort_acc": {
+        "n": 2152680,
+        "pct": 95.22,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "sec_app_open_acc": {
+        "n": 2152680,
+        "pct": 95.22,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "sec_app_open_act_il": {
+        "n": 2152680,
+        "pct": 95.22,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "sec_app_num_rev_accts": {
+        "n": 2152680,
+        "pct": 95.22,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "sec_app_chargeoff_within_12_mths": {
+        "n": 2152680,
+        "pct": 95.22,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "sec_app_collections_12_mths_ex_med": {
+        "n": 2152680,
+        "pct": 95.22,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "verification_status_joint": {
+        "n": 2144971,
+        "pct": 94.88,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "annual_inc_joint": {
+        "n": 2139991,
+        "pct": 94.66,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "dti_joint": {
+        "n": 2139995,
+        "pct": 94.66,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "desc": {
+        "n": 2134636,
+        "pct": 94.42,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "mths_since_last_record": {
+        "n": 1901545,
+        "pct": 84.11,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "mths_since_recent_bc_dlq": {
+        "n": 1741000,
+        "pct": 77.01,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "mths_since_last_major_derog": {
+        "n": 1679926,
+        "pct": 74.31,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "mths_since_recent_revol_delinq": {
+        "n": 1520342,
+        "pct": 67.25,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "next_pymnt_d": {
+        "n": 1345343,
+        "pct": 59.51,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "mths_since_last_delinq": {
+        "n": 1158535,
+        "pct": 51.25,
+        "likely_reason": "structural \u2014 field added partway through the period"
+      },
+      "il_util": {
+        "n": 1068883,
+        "pct": 47.28,
+        "likely_reason": "absent"
+      },
+      "mths_since_rcnt_il": {
+        "n": 909957,
+        "pct": 40.25,
+        "likely_reason": "informative \u2014 the event never occurred"
+      },
+      "all_util": {
+        "n": 866381,
+        "pct": 38.32,
+        "likely_reason": "absent"
+      },
+      "open_acc_6m": {
+        "n": 866163,
+        "pct": 38.31,
+        "likely_reason": "absent"
+      },
+      "open_act_il": {
+        "n": 866162,
+        "pct": 38.31,
+        "likely_reason": "absent"
+      },
+      "open_il_12m": {
+        "n": 866162,
+        "pct": 38.31,
+        "likely_reason": "absent"
+      },
+      "open_il_24m": {
+        "n": 866162,
+        "pct": 38.31,
+        "likely_reason": "absent"
+      },
+      "total_bal_il": {
+        "n": 866162,
+        "pct": 38.31,
+        "likely_reason": "absent"
+      },
+      "open_rv_12m": {
+        "n": 866162,
+        "pct": 38.31,
+        "likely_reason": "absent"
+      },
+      "open_rv_24m": {
+        "n": 866162,
+        "pct": 38.31,
+        "likely_reason": "absent"
+      },
+      "max_bal_bc": {
+        "n": 866162,
+        "pct": 38.31,
+        "likely_reason": "absent"
+      },
+      "inq_fi": {
+        "n": 866162,
+        "pct": 38.31,
+        "likely_reason": "absent"
+      },
+      "total_cu_tl": {
+        "n": 866163,
+        "pct": 38.31,
+        "likely_reason": "absent"
+      },
+      "inq_last_12m": {
+        "n": 866163,
+        "pct": 38.31,
+        "likely_reason": "absent"
+      },
+      "mths_since_recent_inq": {
+        "n": 295468,
+        "pct": 13.07,
+        "likely_reason": "informative \u2014 the event never occurred"
+      },
+      "emp_title": {
+        "n": 167002,
+        "pct": 7.39,
+        "likely_reason": "absent"
+      },
+      "num_tl_120dpd_2m": {
+        "n": 153690,
+        "pct": 6.8,
+        "likely_reason": "absent"
+      },
+      "emp_length": {
+        "n": 146940,
+        "pct": 6.5,
+        "likely_reason": "absent"
+      },
+      "mo_sin_old_il_acct": {
+        "n": 139104,
+        "pct": 6.15,
+        "likely_reason": "informative \u2014 the event never occurred"
+      },
+      "bc_util": {
+        "n": 76104,
+        "pct": 3.37,
+        "likely_reason": "absent"
+      },
+      "percent_bc_gt_75": {
+        "n": 75412,
+        "pct": 3.34,
+        "likely_reason": "absent"
+      },
+      "bc_open_to_buy": {
+        "n": 74968,
+        "pct": 3.32,
+        "likely_reason": "absent"
+      },
+      "mths_since_recent_bc": {
+        "n": 73445,
+        "pct": 3.25,
+        "likely_reason": "informative \u2014 the event never occurred"
+      },
+      "pct_tl_nvr_dlq": {
+        "n": 70464,
+        "pct": 3.12,
+        "likely_reason": "absent"
+      },
+      "tot_coll_amt": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "tot_cur_bal": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "total_rev_hi_lim": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "avg_cur_bal": {
+        "n": 70379,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "mo_sin_old_rev_tl_op": {
+        "n": 70310,
+        "pct": 3.11,
+        "likely_reason": "informative \u2014 the event never occurred"
+      },
+      "mo_sin_rcnt_rev_tl_op": {
+        "n": 70310,
+        "pct": 3.11,
+        "likely_reason": "informative \u2014 the event never occurred"
+      },
+      "mo_sin_rcnt_tl": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "informative \u2014 the event never occurred"
+      },
+      "num_accts_ever_120_pd": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "num_actv_bc_tl": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "num_actv_rev_tl": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "num_bc_tl": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "num_il_tl": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "num_op_rev_tl": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "num_rev_accts": {
+        "n": 70310,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "num_rev_tl_bal_gt_0": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "num_tl_30dpd": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "num_tl_90g_dpd_24m": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "num_tl_op_past_12m": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "tot_hi_cred_lim": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "total_il_high_credit_limit": {
+        "n": 70309,
+        "pct": 3.11,
+        "likely_reason": "absent"
+      },
+      "num_bc_sats": {
+        "n": 58623,
+        "pct": 2.59,
+        "likely_reason": "absent"
+      },
+      "num_sats": {
+        "n": 58623,
+        "pct": 2.59,
+        "likely_reason": "absent"
+      },
+      "acc_open_past_24mths": {
+        "n": 50063,
+        "pct": 2.21,
+        "likely_reason": "absent"
+      },
+      "mort_acc": {
+        "n": 50063,
+        "pct": 2.21,
+        "likely_reason": "absent"
+      },
+      "total_bal_ex_mort": {
+        "n": 50063,
+        "pct": 2.21,
+        "likely_reason": "absent"
+      },
+      "total_bc_limit": {
+        "n": 50063,
+        "pct": 2.21,
+        "likely_reason": "absent"
+      },
+      "title": {
+        "n": 23359,
+        "pct": 1.03,
+        "likely_reason": "absent"
+      },
+      "last_pymnt_d": {
+        "n": 2460,
+        "pct": 0.11,
+        "likely_reason": "absent"
+      },
+      "dti": {
+        "n": 1744,
+        "pct": 0.08,
+        "likely_reason": "absent"
+      },
+      "revol_util": {
+        "n": 1835,
+        "pct": 0.08,
+        "likely_reason": "absent"
+      },
+      "pub_rec_bankruptcies": {
+        "n": 1398,
+        "pct": 0.06,
+        "likely_reason": "absent"
+      },
+      "collections_12_mths_ex_med": {
+        "n": 178,
+        "pct": 0.01,
+        "likely_reason": "absent"
+      },
+      "chargeoff_within_12_mths": {
+        "n": 178,
+        "pct": 0.01,
+        "likely_reason": "absent"
+      },
+      "tax_liens": {
+        "n": 138,
+        "pct": 0.01,
+        "likely_reason": "absent"
+      },
+      "loan_amnt": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "funded_amnt": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "funded_amnt_inv": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "term": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "int_rate": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "installment": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "grade": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "sub_grade": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "home_ownership": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "annual_inc": {
+        "n": 37,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "verification_status": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "issue_d": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "loan_status": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "pymnt_plan": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "url": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "purpose": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "zip_code": {
+        "n": 34,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "addr_state": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "delinq_2yrs": {
+        "n": 62,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "earliest_cr_line": {
+        "n": 62,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "fico_range_low": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "fico_range_high": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "inq_last_6mths": {
+        "n": 63,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "open_acc": {
+        "n": 62,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "pub_rec": {
+        "n": 62,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "revol_bal": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "total_acc": {
+        "n": 62,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "initial_list_status": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "out_prncp": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "out_prncp_inv": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "total_pymnt": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "total_pymnt_inv": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "total_rec_prncp": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "total_rec_int": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "total_rec_late_fee": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "recoveries": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "collection_recovery_fee": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "last_pymnt_amnt": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "last_credit_pull_d": {
+        "n": 105,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "last_fico_range_high": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "last_fico_range_low": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "policy_code": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "application_type": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "acc_now_delinq": {
+        "n": 62,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "delinq_amnt": {
+        "n": 62,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "hardship_flag": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "disbursement_method": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
+      },
+      "debt_settlement_flag": {
+        "n": 33,
+        "pct": 0.0,
+        "likely_reason": "absent"
       }
     },
-    "zero_variance_columns": [
-      "examide",
-      "citoglipton"
-    ],
+    "columns_with_any_missing": 150,
+    "columns_above_50pct": 44,
+    "zero_variance_columns": [],
     "near_zero_variance_columns": {
-      "chlorpropamide": 99.9155,
-      "acetohexamide": 99.999,
-      "tolbutamide": 99.9774,
-      "acarbose": 99.6973,
-      "miglitol": 99.9627,
-      "troglitazone": 99.9971,
-      "tolazamide": 99.9617,
-      "glipizide-metformin": 99.9872,
-      "glimepiride-pioglitazone": 99.999,
-      "metformin-rosiglitazone": 99.998,
-      "metformin-pioglitazone": 99.999
+      "pymnt_plan": 99.9711,
+      "policy_code": 99.9985,
+      "acc_now_delinq": 99.6088,
+      "delinq_amnt": 99.6799,
+      "hardship_flag": 99.9617,
+      "hardship_type": 99.5171,
+      "hardship_reason": 99.5171,
+      "hardship_status": 99.5171,
+      "deferral_term": 99.5171,
+      "hardship_amount": 99.5171,
+      "hardship_start_date": 99.5171,
+      "hardship_end_date": 99.5171,
+      "payment_plan_start_date": 99.5171,
+      "hardship_length": 99.5171,
+      "hardship_dpd": 99.5171,
+      "hardship_loan_status": 99.5171,
+      "orig_projected_additional_accrued_interest": 99.6173,
+      "hardship_payoff_balance_amount": 99.5171,
+      "hardship_last_payment_amount": 99.5171
     }
   },
   "imbalance": {
-    "raw_classes": {
-      "NO": 54864,
-      ">30": 35545,
-      "<30": 11357
-    },
-    "binary_positive": 11357,
-    "binary_negative": 90409,
-    "positive_rate": 0.111599,
-    "imbalance_ratio": 7.96,
-    "majority_class_accuracy": 0.888401,
-    "interpretation": "Predicting 'never readmitted' scores 88.84% accuracy with zero recall. Accuracy is therefore not a meaningful headline metric; PR-AUC against the 11.16% prevalence floor is."
+    "binary_positive": 99554,
+    "binary_negative": 572825,
+    "positive_rate": 0.148062,
+    "imbalance_ratio": 5.75,
+    "majority_class_accuracy": 0.851938,
+    "interpretation": "Predicting 'never defaults' scores 85.19% accuracy with zero recall \u2014 it never identifies a single loan that goes bad. Accuracy is therefore not a meaningful headline metric; PR-AUC against the 14.81% prevalence floor is."
   },
   "leakage": {
-    "rows_in": 101766,
-    "rows_out": 69990,
-    "rows_removed": 31776,
-    "pct_removed": 31.22,
+    "rows_in": 2260701,
+    "rows_out": 672379,
+    "rows_removed": 1588322,
+    "pct_removed": 70.26,
     "steps": [
       {
-        "step": "exclude_expired",
-        "reason": "deterministic label \u2014 a dead patient cannot be readmitted",
-        "n_rows": 1652,
-        "n_positive": 0,
-        "positive_rate": 0.0,
-        "codes": [
-          11,
-          19,
-          20,
-          21
+        "step": "resolve_label",
+        "reason": "only terminal outcomes can be labelled; in-flight loans are not negatives",
+        "rows_before": 2260701,
+        "rows_after": 1348099,
+        "rows_dropped": 912602,
+        "dropped_by_status": {
+          "Current": 878317,
+          "Late (31-120 days)": 21467,
+          "In Grace Period": 8436,
+          "Late (16-30 days)": 4349
+        },
+        "positive_rate": 0.199807
+      },
+      {
+        "step": "drop_immature_loans",
+        "rule": "issue_d + term <= observation_end",
+        "observation_end": "2018-12-01",
+        "rows_before": 1348099,
+        "rows_after": 672379,
+        "rows_dropped": 675720,
+        "positive_rate_before": 0.199807,
+        "positive_rate_after": 0.148062,
+        "latest_issue_kept": "2015-12-01",
+        "years_before": 12,
+        "years_after": 9
+      },
+      {
+        "step": "drop_target_source",
+        "reason": "the column the label was derived from is the label",
+        "column": "loan_status",
+        "perfectly_predicts_target": true,
+        "columns_remaining": 151
+      },
+      {
+        "step": "drop_leaking_columns",
+        "reason": "knowable only after origination; several encode the outcome directly",
+        "columns_dropped": 31,
+        "columns": [
+          "collection_recovery_fee",
+          "debt_settlement_flag",
+          "debt_settlement_flag_date",
+          "hardship_end_date",
+          "hardship_flag",
+          "hardship_last_payment_amount",
+          "hardship_reason",
+          "hardship_start_date",
+          "hardship_status",
+          "hardship_type",
+          "last_credit_pull_d",
+          "last_fico_range_high",
+          "last_fico_range_low",
+          "last_pymnt_amnt",
+          "last_pymnt_d",
+          "next_pymnt_d",
+          "out_prncp",
+          "out_prncp_inv",
+          "payment_plan_start_date",
+          "pymnt_plan",
+          "recoveries",
+          "settlement_amount",
+          "settlement_date",
+          "settlement_percentage",
+          "settlement_status",
+          "settlement_term",
+          "total_pymnt",
+          "total_pymnt_inv",
+          "total_rec_int",
+          "total_rec_late_fee",
+          "total_rec_prncp"
         ],
-        "classification": "LEAKAGE"
+        "columns_remaining": 120
       },
       {
-        "step": "exclude_hospice",
-        "reason": "end-of-life care \u2014 readmission is not a quality signal here",
-        "n_rows": 771,
-        "n_positive": 43,
-        "positive_rate": 0.055772,
-        "codes": [
-          13,
-          14
+        "step": "drop_identifier_columns",
+        "reason": "no signal, constant, or free text outside this project's scope",
+        "columns": [
+          "desc",
+          "emp_title",
+          "id",
+          "member_id",
+          "title",
+          "url",
+          "zip_code"
         ],
-        "classification": "CLINICAL_JUDGEMENT"
+        "columns_remaining": 113
       },
       {
-        "step": "first_encounter_only",
-        "reason": "prevent the same patient straddling the split",
-        "rows_before": 99343,
-        "rows_after": 69990,
-        "rows_removed": 29353,
-        "unique_patients": 69990
-      },
-      {
-        "step": "normalise_missing",
-        "columns_affected": 9,
-        "detail": {
-          "race": {
-            "sentinel": 1919,
-            "pct": 2.74,
-            "action": "-> Unknown category"
+        "step": "drop_sparse_columns",
+        "reason": "structurally missing by era; under a chronological split these proxy for time",
+        "threshold": 0.5,
+        "columns_dropped": 42,
+        "worst": [
+          {
+            "column": "all_util",
+            "missing_pct": 97.79
           },
-          "weight": {
-            "sentinel": 67202,
-            "pct": 96.02,
-            "action": "-> Unknown category"
+          {
+            "column": "annual_inc_joint",
+            "missing_pct": 99.96
           },
-          "payer_code": {
-            "sentinel": 30416,
-            "pct": 43.46,
-            "action": "-> Unknown category"
+          {
+            "column": "deferral_term",
+            "missing_pct": 99.8
           },
-          "medical_specialty": {
-            "sentinel": 33654,
-            "pct": 48.08,
-            "action": "-> Unknown category"
+          {
+            "column": "dti_joint",
+            "missing_pct": 99.96
           },
-          "diag_1": {
-            "sentinel": 10,
-            "pct": 0.01,
-            "action": "-> Unknown category"
+          {
+            "column": "hardship_amount",
+            "missing_pct": 99.8
           },
-          "diag_2": {
-            "sentinel": 293,
-            "pct": 0.42,
-            "action": "-> Unknown category"
+          {
+            "column": "hardship_dpd",
+            "missing_pct": 99.8
           },
-          "diag_3": {
-            "sentinel": 1224,
-            "pct": 1.75,
-            "action": "-> Unknown category"
+          {
+            "column": "hardship_length",
+            "missing_pct": 99.8
           },
-          "max_glu_serum": {
-            "native_nan": 66641,
-            "pct": 95.22,
-            "action": "-> NotMeasured category (test not ordered)"
+          {
+            "column": "hardship_loan_status",
+            "missing_pct": 99.8
           },
-          "A1Cresult": {
-            "native_nan": 57144,
-            "pct": 81.65,
-            "action": "-> NotMeasured category (test not ordered)"
+          {
+            "column": "hardship_payoff_balance_amount",
+            "missing_pct": 99.8
+          },
+          {
+            "column": "il_util",
+            "missing_pct": 98.09
           }
-        }
+        ],
+        "columns_remaining": 71
       },
       {
-        "step": "group_diagnoses",
-        "reason": "717 raw ICD-9 codes would one-hot into mostly-noise columns",
-        "cardinality_before": {
-          "diag_1": 695,
-          "diag_2": 724,
-          "diag_3": 757
-        },
-        "cardinality_after": {
-          "diag_1": 10,
-          "diag_2": 10,
-          "diag_3": 10
-        },
-        "bands": [
-          "Circulatory",
-          "Diabetes",
-          "Digestive",
-          "Genitourinary",
-          "Injury",
-          "Musculoskeletal",
-          "Neoplasms",
-          "Other",
-          "Respiratory",
-          "Unknown"
-        ]
+        "step": "derive_credit_history",
+        "reason": "a date with 691 levels becomes one era-invariant duration",
+        "median_months": 175.0,
+        "negative_values": 0,
+        "missing": 29
       },
       {
-        "step": "drop_columns",
-        "columns": {
-          "weight": "96.86% missing. Imputing a value present in 3% of records would manufacture a variable rather than measure one. The honest move is to drop it and say so.",
-          "examide": "Zero variance \u2014 constant 'No' across all 101,766 rows.",
-          "citoglipton": "Zero variance \u2014 constant 'No' across all 101,766 rows.",
-          "payer_code": "TIME-CONFOUNDED, not merely missing. Capture rises from 0% in the first encounter_id decile to 86% in the last, because the field was rolled out mid-period. Under a chronological split the model would learn 'payer_code present' as a proxy for 'later era' \u2014 an artifact of data capture with no clinical meaning, which cannot generalise. See docs/DECISIONS/0004-temporal-split-proxy.md."
+        "step": "drop_constant_and_redundant",
+        "reason": "zero information, or perfectly collinear with a column we keep",
+        "constant": [
+          "disbursement_method",
+          "policy_code"
+        ],
+        "redundant": [
+          "fico_range_high",
+          "funded_amnt",
+          "funded_amnt_inv"
+        ],
+        "kept_instead": {
+          "fico_range_high": "fico_range_low",
+          "funded_amnt": "loan_amnt"
         },
-        "n_dropped": 4
+        "columns_remaining": 66
       },
       {
         "step": "complete",
-        "rows_in": 101766,
-        "rows_out": 69990,
-        "rows_removed": 31776,
-        "pct_removed": 31.22,
-        "positive_rate": 0.089799
+        "rows_in": 2260701,
+        "rows_out": 672379,
+        "rows_removed": 1588322,
+        "pct_removed": 70.26,
+        "positive_rate": 0.148062,
+        "columns": 66
       }
     ]
   },
-  "time_proxy": {
-    "passed": true,
-    "claim": "chronological split (encounter_id proxy, empirically verified)",
-    "n_trending": 5,
-    "n_signals": 8,
-    "threshold": 3,
-    "criteria": {
-      "min_abs_rho": 0.8,
-      "max_p_value": 0.01
+  "time_coverage": {
+    "column": "issue_d",
+    "is_real_date": true,
+    "note": "a real date, so no proxy verification is required",
+    "range": {
+      "start": "2007-06-01",
+      "end": "2015-12-01"
     },
-    "signals": [
-      {
-        "name": "medical_specialty missing",
-        "first_decile": 0.3638,
-        "last_decile": 0.6791,
-        "delta": 0.3153,
-        "spearman_rho": 0.8909,
-        "p_value": 0.000542,
-        "trends": true
+    "by_year": {
+      "2007": {
+        "n": 603,
+        "positive_rate": 0.262
       },
-      {
-        "name": "payer_code missing",
-        "first_decile": 1.0,
-        "last_decile": 0.1379,
-        "delta": -0.8621,
-        "spearman_rho": -0.8754,
-        "p_value": 0.000905,
-        "trends": true
+      "2008": {
+        "n": 2393,
+        "positive_rate": 0.2073
       },
-      {
-        "name": "A1Cresult measured",
-        "first_decile": 0.1878,
-        "last_decile": 0.1786,
-        "delta": -0.0091,
-        "spearman_rho": 0.1152,
-        "p_value": 0.75142,
-        "trends": false
+      "2009": {
+        "n": 5281,
+        "positive_rate": 0.1369
       },
-      {
-        "name": "max_glu_serum measured",
-        "first_decile": 0.0887,
-        "last_decile": 0.0114,
-        "delta": -0.0773,
-        "spearman_rho": -0.6848,
-        "p_value": 0.028883,
-        "trends": false
+      "2010": {
+        "n": 12537,
+        "positive_rate": 0.1401
       },
-      {
-        "name": "insulin prescribed",
-        "first_decile": 0.4649,
-        "last_decile": 0.6016,
-        "delta": 0.1367,
-        "spearman_rho": 0.8909,
-        "p_value": 0.000542,
-        "trends": true
+      "2011": {
+        "n": 21721,
+        "positive_rate": 0.1518
       },
-      {
-        "name": "metformin prescribed",
-        "first_decile": 0.1676,
-        "last_decile": 0.216,
-        "delta": 0.0483,
-        "spearman_rho": 0.9636,
-        "p_value": 7e-06,
-        "trends": true
+      "2012": {
+        "n": 53367,
+        "positive_rate": 0.162
       },
-      {
-        "name": "pioglitazone prescribed",
-        "first_decile": 0.0368,
-        "last_decile": 0.0796,
-        "delta": 0.0427,
-        "spearman_rho": 0.903,
-        "p_value": 0.000344,
-        "trends": true
+      "2013": {
+        "n": 130881,
+        "positive_rate": 0.1531
       },
-      {
-        "name": "rosiglitazone prescribed",
-        "first_decile": 0.0604,
-        "last_decile": 0.022,
-        "delta": -0.0384,
-        "spearman_rho": -0.1879,
-        "p_value": 0.603218,
-        "trends": false
+      "2014": {
+        "n": 162570,
+        "positive_rate": 0.1373
+      },
+      "2015": {
+        "n": 283026,
+        "positive_rate": 0.1489
       }
-    ],
-    "discontinuity_rosiglitazone": {
-      "column": "rosiglitazone",
-      "n_bins": 20,
-      "rates": [
-        0.0527,
-        0.0682,
-        0.0601,
-        0.0686,
-        0.0635,
-        0.0706,
-        0.0723,
-        0.0798,
-        0.0786,
-        0.0786,
-        0.077,
-        0.0758,
-        0.0735,
-        0.0772,
-        0.0757,
-        0.0715,
-        0.0348,
-        0.0283,
-        0.0206,
-        0.0234
-      ],
-      "largest_drop_at_bin": 15,
-      "largest_drop_pct_points": -3.67,
-      "percentile_of_ordering": 80.0,
-      "ratio_to_typical_change": 7.7
-    },
-    "discontinuity_pioglitazone": {
-      "column": "pioglitazone",
-      "n_bins": 20,
-      "rates": [
-        0.0277,
-        0.046,
-        0.0478,
-        0.0533,
-        0.0542,
-        0.0784,
-        0.0753,
-        0.0731,
-        0.0747,
-        0.0796,
-        0.0698,
-        0.0829,
-        0.0884,
-        0.0839,
-        0.0873,
-        0.0823,
-        0.0902,
-        0.0861,
-        0.0767,
-        0.0825
-      ],
-      "largest_drop_at_bin": 9,
-      "largest_drop_pct_points": -0.98,
-      "percentile_of_ordering": 50.0,
-      "ratio_to_typical_change": 1.5
     }
+  },
+  "leakage_demonstration": {
+    "columns_available": 31,
+    "numeric_columns_used": 16,
+    "rows_sampled": 100857,
+    "roc_auc_with_leakage": 0.9983,
+    "honest_ceiling": 0.7,
+    "recoveries_positive_n": 80312,
+    "recoveries_positive_default_rate": 1.0,
+    "interpretation": "Training on 16 post-origination columns reaches ROC-AUC 0.9983 against an honest ceiling near 0.70. Of the 80,312 loans with recoveries > 0, 100.00% are defaults \u2014 recoveries is money clawed back after a default, so a non-zero value IS the label."
   },
   "censoring": {
-    "n_bins": 20,
-    "positive_rate_per_bin": [
-      0.0971,
-      0.0963,
-      0.096,
-      0.1055,
-      0.0997,
-      0.0977,
-      0.0963,
-      0.096,
-      0.1046,
-      0.1046,
-      0.0977,
-      0.0917,
-      0.09,
-      0.0909,
-      0.0872,
-      0.0754,
-      0.0815,
-      0.076,
-      0.07,
-      0.0417
-    ],
-    "stable_rate_first_80pct": 0.0954,
-    "final_bin_rate": 0.0417,
-    "final_bin_relative_drop": -0.5629,
-    "buffer_fraction": 0.05,
-    "interpretation": "A first encounter is labelled positive only if a later encounter exists in the data. Near the end of collection those later encounters are unobserved, so the label is missing rather than negative. The final bin is discarded as a censoring buffer."
+    "rule": "issue_d + term <= observation_end",
+    "observation_end": "2018-12-01",
+    "unresolved_pct_overall": 40.37,
+    "by_year": {
+      "2007": {
+        "n": 603,
+        "resolved_pct": 100.0,
+        "default_rate_of_resolved": 0.262
+      },
+      "2008": {
+        "n": 2393,
+        "resolved_pct": 100.0,
+        "default_rate_of_resolved": 0.2073
+      },
+      "2009": {
+        "n": 5281,
+        "resolved_pct": 100.0,
+        "default_rate_of_resolved": 0.1369
+      },
+      "2010": {
+        "n": 12537,
+        "resolved_pct": 100.0,
+        "default_rate_of_resolved": 0.1401
+      },
+      "2011": {
+        "n": 21721,
+        "resolved_pct": 100.0,
+        "default_rate_of_resolved": 0.1518
+      },
+      "2012": {
+        "n": 53367,
+        "resolved_pct": 100.0,
+        "default_rate_of_resolved": 0.162
+      },
+      "2013": {
+        "n": 134814,
+        "resolved_pct": 100.0,
+        "default_rate_of_resolved": 0.156
+      },
+      "2014": {
+        "n": 235629,
+        "resolved_pct": 94.7,
+        "default_rate_of_resolved": 0.1845
+      },
+      "2015": {
+        "n": 421095,
+        "resolved_pct": 89.2,
+        "default_rate_of_resolved": 0.2019
+      },
+      "2016": {
+        "n": 434407,
+        "resolved_pct": 67.5,
+        "default_rate_of_resolved": 0.2329
+      },
+      "2017": {
+        "n": 443579,
+        "resolved_pct": 38.2,
+        "default_rate_of_resolved": 0.2313
+      },
+      "2018": {
+        "n": 495242,
+        "resolved_pct": 11.4,
+        "default_rate_of_resolved": 0.1576
+      }
+    },
+    "interpretation": "Resolution depends on age. The 2018 cohort is 11.4% resolved and its default rate FALLS, which is survivorship among fast resolvers rather than better lending. Requiring the full term to have elapsed moves the positive rate from 0.1998 to 0.1481 \u2014 skipping it overstates default by 35% relative."
   },
   "split": {
-    "claim": "chronological split (encounter_id proxy, empirically verified)",
-    "censoring_buffer": {
-      "rows_dropped": 3500,
-      "pct_dropped": 5.0,
-      "positive_rate_dropped_region": 0.0417,
-      "positive_rate_retained": 0.0923,
-      "reason": "right-censoring \u2014 readmissions after the collection window are unobservable"
-    },
+    "claim": "chronological split on issue_d, a real date column",
     "sizes": {
-      "train": 39894,
-      "val": 13298,
-      "test": 13298
+      "train": 389353,
+      "val": 120790,
+      "test": 162236
     },
     "positive_rate": {
-      "train": 0.098712,
-      "val": 0.089863,
-      "test": 0.07565
+      "train": 0.147481,
+      "val": 0.151246,
+      "test": 0.147088
     },
-    "encounter_id_boundaries": {
-      "train_min": 12522,
-      "train_max": 156680970,
-      "val_max": 220877166,
-      "test_max": 366195950
-    }
+    "date_boundaries": {
+      "train_start": "2007-06-01",
+      "train_end": "2014-12-01",
+      "val_end": "2015-06-01",
+      "test_end": "2015-12-01"
+    },
+    "limitations": [
+      "member_id is null for every row, so repeat borrowers cannot be detected and may appear in both train and test. Held-out metrics are inflated to whatever extent repeat borrowing occurs."
+    ]
   },
   "separability": {
     "train_roc_auc": 1.0,
-    "test_roc_auc": 0.5185,
-    "test_pr_auc": 0.079,
-    "tree_depth": 47,
-    "n_leaves": 5034,
+    "test_roc_auc": 0.5335,
+    "test_pr_auc": 0.1586,
+    "tree_depth": 66,
+    "n_leaves": 45210,
     "alarm_threshold": 0.95,
     "alarm_triggered": false,
-    "interpretation": "An unconstrained tree memorises the training set (1.000 AUC) and generalises poorly (0.519 test AUC). This gap is the expected, healthy result: the problem is genuinely hard. A test AUC above 0.95 would indicate leakage or a synthetic dataset."
+    "interpretation": "An unconstrained tree memorises the training set (1.000 AUC) and generalises poorly (0.533 test AUC). This gap is the expected, healthy result: the problem is genuinely hard. A test AUC above 0.95 would indicate leakage or a synthetic dataset."
   },
   "baselines": [
     {
       "name": "majority_class",
-      "description": "Always predicts 'not readmitted'",
-      "accuracy": 0.924349526244548,
+      "description": "Always predicts 'never defaults'",
+      "accuracy": 0.8529118074903227,
       "recall": 0.0,
-      "pr_auc": 0.07565047375545195,
+      "pr_auc": 0.14708819250967725,
       "roc_auc": 0.5,
-      "brier": 0.06992747957602763,
+      "brier": 0.1254532561339134,
       "pr_auc_ci": null,
-      "notes": "High accuracy, zero recall. It never identifies a single patient at risk. This is why accuracy is not reported as a headline metric for this task.",
+      "notes": "High accuracy, zero recall. It never identifies a single borrower at risk. This is why accuracy is not reported as a headline metric for this task.",
       "extra": {}
     },
     {
       "name": "prevalence_constant",
-      "description": "Predicts P(readmit)=0.0757 for every patient",
-      "accuracy": 0.924349526244548,
+      "description": "Predicts P(default)=0.1471 for every loan",
+      "accuracy": 0.8529118074903227,
       "recall": 0.0,
-      "pr_auc": 0.07565047375545195,
+      "pr_auc": 0.14708819250967725,
       "roc_auc": 0.5,
-      "brier": 0.06992747957602763,
+      "brier": 0.1254532561339134,
       "pr_auc_ci": null,
       "notes": "The Brier score to beat. A model that cannot improve on this is not producing usable probabilities, whatever its ranking metrics.",
       "extra": {}
     },
     {
-      "name": "heuristic_number_inpatient",
-      "description": "Ranks patients by number_inpatient (prior inpatient admissions)",
-      "accuracy": 0.8453902842532711,
-      "recall": 0.14910536779324055,
-      "pr_auc": 0.08622026595636137,
-      "roc_auc": 0.5267493234540043,
-      "brier": 0.07495723041058806,
+      "name": "heuristic_int_rate",
+      "description": "Ranks loans by int_rate \u2014 the lender's own priced risk",
+      "accuracy": 0.79140264799428,
+      "recall": 0.2775426392322843,
+      "pr_auc": 0.25291835975641785,
+      "roc_auc": 0.6812224551531629,
+      "brier": 0.13361812495272296,
       "pr_auc_ci": [
-        0.07955644596943595,
-        0.09587164061074664
+        0.2486351402942285,
+        0.2574859628781875
       ],
-      "notes": "The bar that matters. Available at admission with no model. Any trained model must clear this with non-overlapping confidence intervals to justify the operational cost of running it.",
-      "extra": {
-        "threshold": 0.0,
-        "flagged_pct": 10.15
-      }
+      "notes": "The strongest trivial baseline here. int_rate encodes Lending Club's own underwriting decision, so beating it means adding something their model did not already capture.",
+      "extra": {}
     }
   ],
   "subgroups": {
-    "race": {
-      "Caucasian": {
-        "n": 52305,
-        "pct": 74.73,
-        "positive_rate": 0.0919,
+    "addr_state": {
+      "CA": {
+        "n": 103378,
+        "pct": 15.37,
+        "positive_rate": 0.1497,
         "sufficient_for_analysis": true
       },
-      "AfricanAmerican": {
-        "n": 12627,
-        "pct": 18.04,
-        "positive_rate": 0.0867,
+      "NY": {
+        "n": 57491,
+        "pct": 8.55,
+        "positive_rate": 0.1607,
         "sufficient_for_analysis": true
       },
-      "Unknown": {
-        "n": 1919,
-        "pct": 2.74,
-        "positive_rate": 0.0735,
+      "TX": {
+        "n": 54080,
+        "pct": 8.04,
+        "positive_rate": 0.1414,
         "sufficient_for_analysis": true
       },
-      "Hispanic": {
-        "n": 1501,
-        "pct": 2.14,
-        "positive_rate": 0.0813,
+      "FL": {
+        "n": 47249,
+        "pct": 7.03,
+        "positive_rate": 0.1633,
         "sufficient_for_analysis": true
       },
-      "Other": {
-        "n": 1150,
-        "pct": 1.64,
-        "positive_rate": 0.0687,
+      "IL": {
+        "n": 27141,
+        "pct": 4.04,
+        "positive_rate": 0.1295,
         "sufficient_for_analysis": true
       },
-      "Asian": {
-        "n": 488,
-        "pct": 0.7,
-        "positive_rate": 0.084,
+      "NJ": {
+        "n": 25138,
+        "pct": 3.74,
+        "positive_rate": 0.1558,
+        "sufficient_for_analysis": true
+      },
+      "PA": {
+        "n": 22859,
+        "pct": 3.4,
+        "positive_rate": 0.1485,
+        "sufficient_for_analysis": true
+      },
+      "GA": {
+        "n": 21803,
+        "pct": 3.24,
+        "positive_rate": 0.1334,
+        "sufficient_for_analysis": true
+      },
+      "OH": {
+        "n": 21521,
+        "pct": 3.2,
+        "positive_rate": 0.1535,
+        "sufficient_for_analysis": true
+      },
+      "VA": {
+        "n": 19307,
+        "pct": 2.87,
+        "positive_rate": 0.1463,
+        "sufficient_for_analysis": true
+      },
+      "NC": {
+        "n": 18008,
+        "pct": 2.68,
+        "positive_rate": 0.153,
+        "sufficient_for_analysis": true
+      },
+      "MI": {
+        "n": 17272,
+        "pct": 2.57,
+        "positive_rate": 0.1489,
+        "sufficient_for_analysis": true
+      },
+      "AZ": {
+        "n": 15684,
+        "pct": 2.33,
+        "positive_rate": 0.15,
+        "sufficient_for_analysis": true
+      },
+      "MA": {
+        "n": 15567,
+        "pct": 2.32,
+        "positive_rate": 0.1356,
+        "sufficient_for_analysis": true
+      },
+      "MD": {
+        "n": 15425,
+        "pct": 2.29,
+        "positive_rate": 0.1533,
+        "sufficient_for_analysis": true
+      },
+      "WA": {
+        "n": 14879,
+        "pct": 2.21,
+        "positive_rate": 0.1246,
+        "sufficient_for_analysis": true
+      },
+      "CO": {
+        "n": 14069,
+        "pct": 2.09,
+        "positive_rate": 0.1205,
+        "sufficient_for_analysis": true
+      },
+      "MN": {
+        "n": 11850,
+        "pct": 1.76,
+        "positive_rate": 0.1473,
+        "sufficient_for_analysis": true
+      },
+      "MO": {
+        "n": 10560,
+        "pct": 1.57,
+        "positive_rate": 0.1613,
+        "sufficient_for_analysis": true
+      },
+      "CT": {
+        "n": 10298,
+        "pct": 1.53,
+        "positive_rate": 0.1296,
+        "sufficient_for_analysis": true
+      },
+      "NV": {
+        "n": 9850,
+        "pct": 1.46,
+        "positive_rate": 0.1808,
+        "sufficient_for_analysis": true
+      },
+      "IN": {
+        "n": 9568,
+        "pct": 1.42,
+        "positive_rate": 0.1569,
+        "sufficient_for_analysis": true
+      },
+      "TN": {
+        "n": 9021,
+        "pct": 1.34,
+        "positive_rate": 0.1673,
+        "sufficient_for_analysis": true
+      },
+      "WI": {
+        "n": 8738,
+        "pct": 1.3,
+        "positive_rate": 0.1304,
+        "sufficient_for_analysis": true
+      },
+      "OR": {
+        "n": 8493,
+        "pct": 1.26,
+        "positive_rate": 0.1196,
+        "sufficient_for_analysis": true
+      },
+      "AL": {
+        "n": 8074,
+        "pct": 1.2,
+        "positive_rate": 0.1722,
+        "sufficient_for_analysis": true
+      },
+      "LA": {
+        "n": 7826,
+        "pct": 1.16,
+        "positive_rate": 0.1652,
+        "sufficient_for_analysis": true
+      },
+      "SC": {
+        "n": 7699,
+        "pct": 1.15,
+        "positive_rate": 0.1213,
+        "sufficient_for_analysis": true
+      },
+      "KY": {
+        "n": 6141,
+        "pct": 0.91,
+        "positive_rate": 0.1511,
+        "sufficient_for_analysis": true
+      },
+      "OK": {
+        "n": 5952,
+        "pct": 0.89,
+        "positive_rate": 0.1747,
+        "sufficient_for_analysis": true
+      },
+      "KS": {
+        "n": 5867,
+        "pct": 0.87,
+        "positive_rate": 0.1178,
+        "sufficient_for_analysis": true
+      },
+      "AR": {
+        "n": 4923,
+        "pct": 0.73,
+        "positive_rate": 0.1773,
+        "sufficient_for_analysis": true
+      },
+      "UT": {
+        "n": 4639,
+        "pct": 0.69,
+        "positive_rate": 0.1386,
+        "sufficient_for_analysis": true
+      },
+      "NM": {
+        "n": 3757,
+        "pct": 0.56,
+        "positive_rate": 0.1584,
+        "sufficient_for_analysis": true
+      },
+      "HI": {
+        "n": 3470,
+        "pct": 0.52,
+        "positive_rate": 0.151,
+        "sufficient_for_analysis": true
+      },
+      "NH": {
+        "n": 3213,
+        "pct": 0.48,
+        "positive_rate": 0.1002,
+        "sufficient_for_analysis": true
+      },
+      "WV": {
+        "n": 3053,
+        "pct": 0.45,
+        "positive_rate": 0.112,
+        "sufficient_for_analysis": true
+      },
+      "RI": {
+        "n": 2919,
+        "pct": 0.43,
+        "positive_rate": 0.1394,
+        "sufficient_for_analysis": true
+      },
+      "MS": {
+        "n": 2501,
+        "pct": 0.37,
+        "positive_rate": 0.1879,
+        "sufficient_for_analysis": true
+      },
+      "DC": {
+        "n": 1981,
+        "pct": 0.29,
+        "positive_rate": 0.0994,
+        "sufficient_for_analysis": true
+      },
+      "MT": {
+        "n": 1938,
+        "pct": 0.29,
+        "positive_rate": 0.1249,
+        "sufficient_for_analysis": true
+      },
+      "DE": {
+        "n": 1814,
+        "pct": 0.27,
+        "positive_rate": 0.1439,
+        "sufficient_for_analysis": true
+      },
+      "AK": {
+        "n": 1711,
+        "pct": 0.25,
+        "positive_rate": 0.1409,
+        "sufficient_for_analysis": true
+      },
+      "WY": {
+        "n": 1511,
+        "pct": 0.22,
+        "positive_rate": 0.1152,
+        "sufficient_for_analysis": true
+      },
+      "SD": {
+        "n": 1378,
+        "pct": 0.2,
+        "positive_rate": 0.1633,
+        "sufficient_for_analysis": true
+      },
+      "VT": {
+        "n": 1320,
+        "pct": 0.2,
+        "positive_rate": 0.1083,
+        "sufficient_for_analysis": true
+      },
+      "NE": {
+        "n": 768,
+        "pct": 0.11,
+        "positive_rate": 0.1992,
+        "sufficient_for_analysis": true
+      },
+      "ME": {
+        "n": 338,
+        "pct": 0.05,
+        "positive_rate": 0.1036,
+        "sufficient_for_analysis": false
+      },
+      "ND": {
+        "n": 311,
+        "pct": 0.05,
+        "positive_rate": 0.1576,
+        "sufficient_for_analysis": false
+      },
+      "IA": {
+        "n": 14,
+        "pct": 0.0,
+        "positive_rate": 0.2143,
+        "sufficient_for_analysis": false
+      },
+      "ID": {
+        "n": 12,
+        "pct": 0.0,
+        "positive_rate": 0.0833,
         "sufficient_for_analysis": false
       }
     },
-    "gender": {
-      "Female": {
-        "n": 37239,
-        "pct": 53.21,
-        "positive_rate": 0.0904,
+    "emp_length": {
+      "10+ years": {
+        "n": 209801,
+        "pct": 31.2,
+        "positive_rate": 0.1368,
         "sufficient_for_analysis": true
       },
-      "Male": {
-        "n": 32748,
-        "pct": 46.79,
-        "positive_rate": 0.0892,
+      "2 years": {
+        "n": 61137,
+        "pct": 9.09,
+        "positive_rate": 0.1455,
         "sufficient_for_analysis": true
       },
-      "Unknown/Invalid": {
-        "n": 3,
+      "< 1 year": {
+        "n": 55151,
+        "pct": 8.2,
+        "positive_rate": 0.152,
+        "sufficient_for_analysis": true
+      },
+      "3 years": {
+        "n": 54265,
+        "pct": 8.07,
+        "positive_rate": 0.1464,
+        "sufficient_for_analysis": true
+      },
+      "1 year": {
+        "n": 44638,
+        "pct": 6.64,
+        "positive_rate": 0.1505,
+        "sufficient_for_analysis": true
+      },
+      "5 years": {
+        "n": 43493,
+        "pct": 6.47,
+        "positive_rate": 0.1475,
+        "sufficient_for_analysis": true
+      },
+      "4 years": {
+        "n": 40750,
+        "pct": 6.06,
+        "positive_rate": 0.147,
+        "sufficient_for_analysis": true
+      },
+      "nan": {
+        "n": 37479,
+        "pct": 5.57,
+        "positive_rate": 0.2084,
+        "sufficient_for_analysis": true
+      },
+      "7 years": {
+        "n": 33960,
+        "pct": 5.05,
+        "positive_rate": 0.148,
+        "sufficient_for_analysis": true
+      },
+      "6 years": {
+        "n": 33461,
+        "pct": 4.98,
+        "positive_rate": 0.1495,
+        "sufficient_for_analysis": true
+      },
+      "8 years": {
+        "n": 32773,
+        "pct": 4.87,
+        "positive_rate": 0.1491,
+        "sufficient_for_analysis": true
+      },
+      "9 years": {
+        "n": 25471,
+        "pct": 3.79,
+        "positive_rate": 0.1484,
+        "sufficient_for_analysis": true
+      }
+    },
+    "home_ownership": {
+      "MORTGAGE": {
+        "n": 319693,
+        "pct": 47.55,
+        "positive_rate": 0.1261,
+        "sufficient_for_analysis": true
+      },
+      "RENT": {
+        "n": 285789,
+        "pct": 42.5,
+        "positive_rate": 0.1711,
+        "sufficient_for_analysis": true
+      },
+      "OWN": {
+        "n": 66663,
+        "pct": 9.91,
+        "positive_rate": 0.1546,
+        "sufficient_for_analysis": true
+      },
+      "OTHER": {
+        "n": 182,
+        "pct": 0.03,
+        "positive_rate": 0.2088,
+        "sufficient_for_analysis": false
+      },
+      "NONE": {
+        "n": 50,
+        "pct": 0.01,
+        "positive_rate": 0.16,
+        "sufficient_for_analysis": false
+      },
+      "ANY": {
+        "n": 2,
         "pct": 0.0,
         "positive_rate": 0.0,
-        "sufficient_for_analysis": false
-      }
-    },
-    "age": {
-      "[70-80)": {
-        "n": 17751,
-        "pct": 25.36,
-        "positive_rate": 0.1024,
-        "sufficient_for_analysis": true
-      },
-      "[60-70)": {
-        "n": 15689,
-        "pct": 22.42,
-        "positive_rate": 0.0902,
-        "sufficient_for_analysis": true
-      },
-      "[50-60)": {
-        "n": 12351,
-        "pct": 17.65,
-        "positive_rate": 0.0712,
-        "sufficient_for_analysis": true
-      },
-      "[80-90)": {
-        "n": 11110,
-        "pct": 15.87,
-        "positive_rate": 0.1079,
-        "sufficient_for_analysis": true
-      },
-      "[40-50)": {
-        "n": 6828,
-        "pct": 9.76,
-        "positive_rate": 0.0741,
-        "sufficient_for_analysis": true
-      },
-      "[30-40)": {
-        "n": 2692,
-        "pct": 3.85,
-        "positive_rate": 0.0698,
-        "sufficient_for_analysis": true
-      },
-      "[90-100)": {
-        "n": 1761,
-        "pct": 2.52,
-        "positive_rate": 0.0954,
-        "sufficient_for_analysis": true
-      },
-      "[20-30)": {
-        "n": 1121,
-        "pct": 1.6,
-        "positive_rate": 0.074,
-        "sufficient_for_analysis": true
-      },
-      "[10-20)": {
-        "n": 534,
-        "pct": 0.76,
-        "positive_rate": 0.0487,
-        "sufficient_for_analysis": true
-      },
-      "[0-10)": {
-        "n": 153,
-        "pct": 0.22,
-        "positive_rate": 0.0196,
         "sufficient_for_analysis": false
       }
     }
