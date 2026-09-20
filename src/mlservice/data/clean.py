@@ -232,6 +232,98 @@ def drop_sparse_columns(
     return out
 
 
+def derive_credit_history(df: pd.DataFrame, report: CleaningReport) -> pd.DataFrame:
+    """``earliest_cr_line`` -> months of credit history at origination.
+
+    As shipped it is a date string with 691 distinct values. Treated as a
+    categorical it would explode into 691 dummy columns, most of them seen a
+    handful of times, and it would encode the *era* rather than the borrower.
+
+    As a duration relative to the loan's own issue date it becomes what it
+    actually means: how long this person has had credit. That is a genuine
+    risk feature, and it is era-invariant, which matters under a chronological
+    split.
+    """
+    issued = parse_issue_date(df)
+    opened = pd.to_datetime(df["earliest_cr_line"], format="%b-%Y", errors="coerce")
+    months = ((issued - opened).dt.days / 30.44).round(1)
+
+    out = df.drop(columns=["earliest_cr_line"])
+    out["credit_history_months"] = months
+
+    report.record(
+        "derive_credit_history",
+        reason="a date with 691 levels becomes one era-invariant duration",
+        median_months=float(months.median()),
+        negative_values=int((months < 0).sum()),
+        missing=int(months.isna().sum()),
+    )
+    return out
+
+
+def drop_target_source(df: pd.DataFrame, report: CleaningReport) -> pd.DataFrame:
+    """Remove the raw status column the label was derived from.
+
+    **This is the target itself.** ``loan_status`` maps one-to-one onto
+    ``target`` by construction, so leaving it in the feature frame hands the
+    model the answer. It survived the first version of this pipeline because
+    the leakage list was written from the data dictionary — which describes
+    ``loan_status`` as a loan attribute, because it is one, right up until you
+    make it the label.
+
+    The lesson is that a leakage list cannot be written once: deriving a label
+    creates a new leak that did not exist before.
+    """
+    settings = get_settings()
+    column = settings.data.target_column
+    if column not in df.columns:
+        return df
+
+    perfectly_predicts = bool(df.groupby(column)["target"].nunique().max() == 1)
+    out = df.drop(columns=[column])
+
+    report.record(
+        "drop_target_source",
+        reason="the column the label was derived from is the label",
+        column=column,
+        perfectly_predicts_target=perfectly_predicts,
+        columns_remaining=len(out.columns),
+    )
+    return out
+
+
+def drop_constant_and_redundant(df: pd.DataFrame, report: CleaningReport) -> pd.DataFrame:
+    """Drop zero-information and perfectly-collinear columns.
+
+    Constants carry nothing: ``policy_code`` is 1 for every row and
+    ``disbursement_method`` is "Cash" for every row. They cost a column in the
+    serving contract and buy nothing.
+
+    Redundancy is the subtler half. ``fico_range_low`` and ``fico_range_high``
+    correlate at **exactly 1.0** — they are the two ends of a fixed-width band,
+    so one is the other plus a constant. Keeping both gives a linear model two
+    identical columns to split a coefficient across, which inflates its
+    variance and makes the fitted weights unreadable. ``funded_amnt`` and
+    ``funded_amnt_inv`` sit at 0.9989 against ``loan_amnt`` for the same
+    reason: on a funded loan, the amount requested is the amount funded.
+    """
+    constant = sorted(c for c in df.columns if c != "target" and len(df[c].unique()) <= 1)
+    redundant = [
+        c for c in ("fico_range_high", "funded_amnt", "funded_amnt_inv") if c in df.columns
+    ]
+
+    out = df.drop(columns=constant + redundant)
+    report.record(
+        "drop_constant_and_redundant",
+        reason="zero information, or perfectly collinear with a column we keep",
+        constant=constant,
+        redundant=redundant,
+        kept_instead={"fico_range_high": "fico_range_low", "funded_amnt": "loan_amnt"},
+        columns_remaining=len(out.columns),
+    )
+    return out
+
+
 def clean(df: pd.DataFrame) -> tuple[pd.DataFrame, CleaningReport]:
     """Run the full cleaning pipeline and return the data plus its report.
 
@@ -243,9 +335,12 @@ def clean(df: pd.DataFrame) -> tuple[pd.DataFrame, CleaningReport]:
 
     out = resolve_label(df, report)
     out = drop_immature_loans(out, report)
+    out = drop_target_source(out, report)
     out = drop_leaking_columns(out, report)
     out = drop_identifier_columns(out, report)
     out = drop_sparse_columns(out, report)
+    out = derive_credit_history(out, report)
+    out = drop_constant_and_redundant(out, report)
 
     report.rows_out = len(out)
     report.record(
@@ -263,10 +358,13 @@ def clean(df: pd.DataFrame) -> tuple[pd.DataFrame, CleaningReport]:
 __all__ = [
     "CleaningReport",
     "clean",
+    "derive_credit_history",
+    "drop_constant_and_redundant",
     "drop_identifier_columns",
     "drop_immature_loans",
     "drop_leaking_columns",
     "drop_sparse_columns",
+    "drop_target_source",
     "parse_issue_date",
     "parse_term_months",
     "resolve_label",
