@@ -1,20 +1,22 @@
-"""Feature transformation, fitted on train and carried with the model.
+"""The feature pipeline: one fitted object that travels with the model.
 
-The transformer is part of the model artifact, never a separate preprocessing
-step the API has to reproduce. Reimplementing encoding at serving time is one of
-the most common ways a service silently serves garbage: the training pipeline
-and the serving pipeline drift apart, both remain individually valid, and
-nothing raises.
+Two properties of credit-bureau data force choices the medical version never
+had to make.
 
-Two choices worth defending:
+**Missingness is informative.** ``mths_since_recent_inq`` is null for 17.4% of
+loans, and it is null precisely when there has been no recent credit inquiry —
+which is a *good* sign, not an absence of information. Median-imputing it
+silently converts "never" into "typical". So every numeric column is imputed
+**and** accompanied by a missingness indicator, letting the model learn from
+the fact of absence rather than having it papered over.
 
-*   **``handle_unknown="infrequent_if_exist"``** on the categorical encoder. At
-    serving time a category the model never saw must not raise — a single
-    unfamiliar `medical_specialty` should degrade one prediction, not return a
-    500. Phase 4's robustness tests assert exactly this.
-*   **No imputation.** Cleaning already turned every absence into an explicit
-    ``Unknown`` or ``NotMeasured`` category, because whether a clinician ordered
-    a test is itself informative. There is nothing left to impute.
+**The tails are extreme.** ``tot_coll_amt`` has a skew of 747; ``annual_inc``
+of 44. Under ``StandardScaler`` a handful of millionaires and one enormous
+collection balance would dominate the L2 penalty, and the fitted coefficients
+would describe those outliers rather than the population. A quantile transform
+maps each feature onto a normal distribution by rank, which fixes skew and
+outliers in one step — and because it is **monotone**, it preserves the
+directional relationships the behaviour tests assert.
 """
 
 from __future__ import annotations
@@ -24,13 +26,15 @@ import json
 
 import pandas as pd
 from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, QuantileTransformer
 
 from mlservice.data import schema
-from mlservice.logging_ import get_logger
 
-log = get_logger(__name__)
+#: Enough quantiles to describe the distribution without memorising it. With
+#: 389k training rows, 1000 is a fine grid and still cheap to apply per request.
+N_QUANTILES = 1000
 
 
 def feature_columns(df: pd.DataFrame) -> tuple[list[str], list[str]]:
@@ -48,24 +52,45 @@ def build_preprocessor(df: pd.DataFrame) -> ColumnTransformer:
     """Build the (unfitted) feature transformer."""
     numeric, categorical = feature_columns(df)
 
+    numeric_pipeline = Pipeline(
+        [
+            # add_indicator is the load-bearing argument. Missing here means
+            # "this never happened", which is signal; without the indicator the
+            # median silently stands in for it and the distinction is lost.
+            ("impute", SimpleImputer(strategy="median", add_indicator=True)),
+            (
+                "scale",
+                QuantileTransformer(
+                    n_quantiles=N_QUANTILES,
+                    output_distribution="normal",
+                    subsample=200_000,
+                    random_state=42,
+                ),
+            ),
+        ]
+    )
+
     return ColumnTransformer(
         transformers=[
-            # Scaling matters for regularised logistic regression: without it,
-            # the L2 penalty is applied unevenly across features whose natural
-            # scales differ by orders of magnitude (num_lab_procedures reaches
-            # 100+, number_emergency is usually 0).
-            ("numeric", StandardScaler(), numeric),
+            ("numeric", numeric_pipeline, numeric),
             (
                 "categorical",
                 OneHotEncoder(
                     handle_unknown="infrequent_if_exist",
-                    min_frequency=30,  # rarer levels fold into an infrequent bucket
+                    # addr_state has 51 levels and purpose has 14; a level seen
+                    # fewer than 30 times in 389k rows cannot support a stable
+                    # coefficient, so it folds into an infrequent bucket rather
+                    # than adding a column that fits noise.
+                    min_frequency=30,
                     sparse_output=False,
                 ),
                 categorical,
             ),
         ],
-        remainder="drop",  # identifiers and target must never reach the model
+        # Identifiers, the target and issue_d must never reach the model.
+        # issue_d in particular would be catastrophic under a chronological
+        # split: it is perfectly correlated with the split boundary.
+        remainder="drop",
         verbose_feature_names_out=False,
     )
 
@@ -73,19 +98,21 @@ def build_preprocessor(df: pd.DataFrame) -> ColumnTransformer:
 def build_pipeline(df: pd.DataFrame, estimator: object) -> Pipeline:
     """Preprocessor + estimator as one artifact.
 
-    One object to log, register, load and serve. The API calls ``predict_proba``
-    on raw records and the fitted transforms travel with it.
+    One object to log, register, load and serve. The API calls
+    ``predict_proba`` on raw records and the fitted transforms travel with it —
+    which is what stops training-time and serving-time preprocessing drifting
+    apart.
     """
     return Pipeline([("preprocess", build_preprocessor(df)), ("model", estimator)])
 
 
 def feature_schema_hash(df: pd.DataFrame) -> str:
-    """Stable hash of the feature contract: column names, dtypes, categories.
+    """Stable hash of the feature contract: column names and category levels.
 
-    Written into every prediction log record in Phase 3 and checked by the
-    Phase 7 promotion gates. Its purpose is to answer one question definitively:
-    *are these two windows even comparable?* Drift analysis across a schema
-    change is meaningless, and without a hash the change is invisible.
+    Written into every prediction log record and checked by the promotion
+    gates. Its purpose is to answer one question definitively: *are these two
+    windows even comparable?* Drift analysis across a schema change is
+    meaningless, and without a hash the change is invisible.
     """
     numeric, categorical = feature_columns(df)
     contract = {
@@ -99,17 +126,19 @@ def feature_schema_hash(df: pd.DataFrame) -> str:
 
 
 def split_xy(df: pd.DataFrame, target: str = "target") -> tuple[pd.DataFrame, pd.Series]:
-    """Separate features from label, dropping identifiers.
+    """Separate features from label, dropping anything that is not a feature.
 
-    Identifiers are removed here rather than relied upon being ignored
-    downstream. ``patient_nbr`` in particular is a high-cardinality integer that
-    a tree would happily split on, memorising individuals.
+    ``issue_d`` is dropped here rather than relied upon being ignored
+    downstream. Under a chronological split it encodes the split boundary
+    exactly, so a model given it would "predict" the future by reading the
+    date — and the held-out metrics would look excellent.
     """
-    drop = [c for c in (*schema.IDENTIFIER_COLUMNS, target) if c in df.columns]
+    drop = [c for c in (schema.TIME_COLUMN, schema.TARGET_SOURCE, target) if c in df.columns]
     return df.drop(columns=drop), df[target]
 
 
 __all__ = [
+    "N_QUANTILES",
     "build_pipeline",
     "build_preprocessor",
     "feature_columns",
