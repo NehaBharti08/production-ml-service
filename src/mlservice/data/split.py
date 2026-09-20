@@ -1,237 +1,44 @@
-"""Chronological split, and the verification that earns the right to call it one.
+"""Chronological splitting on a real date.
 
-This dataset has **no timestamp column**. The only time signal is the ordering
-of ``encounter_id``. Splitting on that ordering is standard practice, but it is
-a *proxy*, and asserting "temporal validation" without evidence would be exactly
-the kind of unearned claim this project exists to avoid.
+**This module is a fraction of the size it was.** The medical version of this
+project had to *prove* that an ID sequence carried time signal before anything
+could split on it — a decile-shift test across eight independent signals,
+Spearman correlations, a discontinuity hunt, and an ADR explaining why the
+claim was "ordered" rather than "temporal" if the test failed.
 
-So the proxy is tested before it is trusted. :func:`verify_time_proxy` looks for
-**monotonic** shifts in recording and prescribing practice across encounter_id
-deciles. The reasoning: clinical practice change is directional — a drug is
-adopted, a field starts being captured — whereas a meaningless row ordering
-produces non-monotonic noise. Spearman rank correlation against decile index
-distinguishes the two.
+Lending Club records ``issue_d``. The split is chronological by construction,
+so all of that apparatus is gone. That is the upgrade the domain switch bought,
+and it is worth noticing how much complexity a single trustworthy column
+removes.
 
-If verification fails, callers should downgrade the claim to "ordered holdout"
-and say so in the README. Both outcomes are publishable; only the untested
-assertion is not.
+What remains is the part that still matters: splitting at **month boundaries**
+rather than row positions, and stating plainly the one guarantee this dataset
+cannot give.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-import numpy as np
 import pandas as pd
-from scipy import stats
 
 from mlservice.config import get_settings
-from mlservice.data import schema
+from mlservice.data import clean
 from mlservice.logging_ import get_logger
 
 log = get_logger(__name__)
 
-#: A signal counts as evidence only if it is both strongly monotonic and
-#: unlikely by chance. |rho| > 0.8 across 10 deciles is a strong rank trend;
-#: p < 0.01 with n=10 is a demanding bar precisely because the sample is small.
-MIN_ABS_RHO = 0.8
-MAX_P_VALUE = 0.01
-
-#: Verification passes when at least this many independent signals trend. One
-#: trending signal could be a single recording change; several, across
-#: unrelated columns, is a time axis.
-MIN_TRENDING_SIGNALS = 3
-
-
-@dataclass
-class ProxySignal:
-    name: str
-    column: str
-    first_decile: float
-    last_decile: float
-    spearman_rho: float
-    p_value: float
-    values: list[float] = field(default_factory=list)
-
-    @property
-    def trends(self) -> bool:
-        return abs(self.spearman_rho) > MIN_ABS_RHO and self.p_value < MAX_P_VALUE
-
-    @property
-    def delta(self) -> float:
-        return self.last_decile - self.first_decile
-
-
-@dataclass
-class ProxyVerification:
-    passed: bool
-    signals: list[ProxySignal]
-    n_trending: int
-    n_deciles: int
-
-    @property
-    def claim(self) -> str:
-        """The strongest claim the evidence supports. Used verbatim in docs."""
-        return (
-            "chronological split (encounter_id proxy, empirically verified)"
-            if self.passed
-            else "ordered holdout (encounter_id ordering NOT verified as temporal)"
-        )
-
-
-def _rate(fn: Callable[[pd.Series], float]) -> Callable[[pd.Series], float]:
-    return fn
-
-
-#: Signals chosen to be independent of each other and of the target: two
-#: data-capture practices, two lab-ordering practices, four prescribing
-#: patterns. If they trend together, the common cause is time.
-_SIGNALS: tuple[tuple[str, str, Callable[[pd.Series], float]], ...] = (
-    ("medical_specialty missing", "medical_specialty", lambda s: float((s == "?").mean())),
-    ("payer_code missing", "payer_code", lambda s: float((s == "?").mean())),
-    ("A1Cresult measured", "A1Cresult", lambda s: float(s.notna().mean())),
-    ("max_glu_serum measured", "max_glu_serum", lambda s: float(s.notna().mean())),
-    ("insulin prescribed", "insulin", lambda s: float((s != "No").mean())),
-    ("metformin prescribed", "metformin", lambda s: float((s != "No").mean())),
-    ("pioglitazone prescribed", "pioglitazone", lambda s: float((s != "No").mean())),
-    ("rosiglitazone prescribed", "rosiglitazone", lambda s: float((s != "No").mean())),
-)
-
-
-def verify_time_proxy(df: pd.DataFrame, n_deciles: int = 10) -> ProxyVerification:
-    """Test whether ordering by ``encounter_id`` carries real time signal.
-
-    Must be run on the **raw** frame, before cleaning: it inspects the ``"?"``
-    sentinels and native NaNs that cleaning deliberately removes.
-    """
-    ordered = df.sort_values(schema.ENCOUNTER_ID).reset_index(drop=True)
-    decile = pd.qcut(ordered[schema.ENCOUNTER_ID].rank(method="first"), n_deciles, labels=False)
-
-    signals: list[ProxySignal] = []
-    for name, column, fn in _SIGNALS:
-        if column not in ordered.columns:
-            continue
-        per_decile = ordered.groupby(decile)[column].apply(fn)
-        rho, p = stats.spearmanr(np.arange(len(per_decile)), per_decile.to_numpy())
-        signals.append(
-            ProxySignal(
-                name=name,
-                column=column,
-                first_decile=float(per_decile.iloc[0]),
-                last_decile=float(per_decile.iloc[-1]),
-                spearman_rho=float(rho),
-                p_value=float(p),
-                values=[float(v) for v in per_decile.to_numpy()],
-            )
-        )
-
-    n_trending = sum(s.trends for s in signals)
-    passed = n_trending >= MIN_TRENDING_SIGNALS
-
-    log.info(
-        "time_proxy_verified" if passed else "time_proxy_FAILED",
-        n_trending=n_trending,
-        n_signals=len(signals),
-        threshold=MIN_TRENDING_SIGNALS,
-        trending=[s.name for s in signals if s.trends],
-    )
-    return ProxyVerification(
-        passed=passed, signals=signals, n_trending=n_trending, n_deciles=n_deciles
-    )
-
-
-def detect_discontinuities(df: pd.DataFrame, column: str, n_bins: int = 20) -> dict[str, Any]:
-    """Find the sharpest bin-to-bin change in a column's prescribing rate.
-
-    Trend tests establish that ordering carries time signal. A *discontinuity*
-    can do something stronger: if an abrupt, drug-specific break appears at a
-    known point, it dates the ordering against real-world events, which is a
-    prediction that could have failed rather than a pattern found after the
-    fact.
-    """
-    ordered = df.sort_values(schema.ENCOUNTER_ID).reset_index(drop=True)
-    bins = pd.qcut(ordered[schema.ENCOUNTER_ID].rank(method="first"), n_bins, labels=False)
-    rate = ordered.groupby(bins)[column].apply(lambda s: float((s != "No").mean()))
-
-    deltas = np.diff(rate.to_numpy())
-    idx = int(np.argmin(deltas))
-    others = np.delete(deltas, idx)
-    typical = float(np.mean(np.abs(others))) or 1e-9
-
-    return {
-        "column": column,
-        "n_bins": n_bins,
-        "rates": [round(float(v), 4) for v in rate.to_numpy()],
-        "largest_drop_at_bin": idx,
-        "largest_drop_pct_points": round(float(deltas[idx]) * 100, 2),
-        "percentile_of_ordering": round((idx + 1) / n_bins * 100, 1),
-        "ratio_to_typical_change": round(abs(float(deltas[idx])) / typical, 1),
-    }
-
-
-#: Fraction of the ordering discarded from the end before splitting.
+#: Borrower identity is unavailable: Lending Club scrubbed ``member_id`` before
+#: release, and it is null for every row. The medical version could keep one
+#: encounter per patient and assert that nobody straddled the split; here that
+#: is simply not possible.
 #:
-#: Measured, not chosen. A first encounter can only carry a positive label if a
-#: *subsequent* encounter exists in the data, so patients admitted near the end
-#: of the collection window have their readmissions systematically unobserved —
-#: classic right-censoring. The first-encounter positive rate sits at ~9.4%
-#: through the first 80% of the ordering and then falls away: -15%, -20%, -27%
-#: relative in the next three 5% bins, and -58% (to 3.89%) in the final one.
-#:
-#: The last bin is where censoring dominates rather than merely contributes, so
-#: that is what gets cut. Keeping it would depress every test-set metric for a
-#: reason that has nothing to do with the model, and would make Phase 6 drift
-#: monitoring chase an artifact of data collection.
-CENSORING_BUFFER_FRACTION = 0.05
-
-
-def censoring_buffer_evidence(df: pd.DataFrame, n_bins: int = 20) -> dict[str, Any]:
-    """Quantify label censoring at the end of the observation window."""
-    ordered = df.sort_values(schema.ENCOUNTER_ID).reset_index(drop=True)
-    target = (
-        ordered["target"]
-        if "target" in ordered.columns
-        else (ordered[schema.TARGET] == schema.POSITIVE_LABEL).astype(int)
-    )
-    bins = pd.qcut(ordered[schema.ENCOUNTER_ID].rank(method="first"), n_bins, labels=False)
-    rate = target.groupby(bins).mean()
-
-    n_stable = int(n_bins * (1 - CENSORING_BUFFER_FRACTION * 4))
-    stable = float(rate.iloc[:n_stable].mean())
-
-    return {
-        "n_bins": n_bins,
-        "positive_rate_per_bin": [round(float(v), 4) for v in rate.to_numpy()],
-        "stable_rate_first_80pct": round(stable, 4),
-        "final_bin_rate": round(float(rate.iloc[-1]), 4),
-        "final_bin_relative_drop": round(float(rate.iloc[-1]) / stable - 1, 4),
-        "buffer_fraction": CENSORING_BUFFER_FRACTION,
-        "interpretation": (
-            "A first encounter is labelled positive only if a later encounter "
-            "exists in the data. Near the end of collection those later "
-            "encounters are unobserved, so the label is missing rather than "
-            "negative. The final bin is discarded as a censoring buffer."
-        ),
-    }
-
-
-def apply_censoring_buffer(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """Drop the final ``CENSORING_BUFFER_FRACTION`` of the ordering."""
-    ordered = df.sort_values(schema.ENCOUNTER_ID).reset_index(drop=True)
-    keep = int(len(ordered) * (1 - CENSORING_BUFFER_FRACTION))
-    kept, dropped = ordered.iloc[:keep].copy(), ordered.iloc[keep:]
-
-    detail = {
-        "rows_dropped": len(dropped),
-        "pct_dropped": round(len(dropped) / len(ordered) * 100, 2),
-        "positive_rate_dropped_region": round(float(dropped["target"].mean()), 4),
-        "positive_rate_retained": round(float(kept["target"].mean()), 4),
-        "reason": "right-censoring — readmissions after the collection window are unobservable",
-    }
-    log.info("censoring_buffer_applied", **detail)
-    return kept, detail
+#: A borrower with two loans can therefore appear in both train and test, and
+#: the held-out numbers are inflated to whatever extent repeat borrowing
+#: occurs. Stated in the model card as a limitation rather than left for a
+#: reviewer to infer from a missing check.
+BORROWER_IDENTITY_AVAILABLE = False
 
 
 @dataclass
@@ -239,14 +46,12 @@ class SplitResult:
     train: pd.DataFrame
     val: pd.DataFrame
     test: pd.DataFrame
-    verification: ProxyVerification
-    boundaries: dict[str, int]
-    censoring: dict[str, Any] = field(default_factory=dict)
+    boundaries: dict[str, str]
+    limitations: list[str] = field(default_factory=list)
 
     def summary(self) -> dict[str, Any]:
         return {
-            "claim": self.verification.claim,
-            "censoring_buffer": self.censoring,
+            "claim": "chronological split on issue_d, a real date column",
             "sizes": {
                 "train": len(self.train),
                 "val": len(self.val),
@@ -257,57 +62,101 @@ class SplitResult:
                 "val": round(float(self.val["target"].mean()), 6),
                 "test": round(float(self.test["target"].mean()), 6),
             },
-            "encounter_id_boundaries": self.boundaries,
+            "date_boundaries": self.boundaries,
+            "limitations": self.limitations,
         }
 
 
-def chronological_split(df: pd.DataFrame, verification: ProxyVerification) -> SplitResult:
-    """Split by position in ``encounter_id`` order — never at random.
+def month_boundaries(
+    dates: pd.Series, train_fraction: float, val_fraction: float
+) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """Find the two cut dates that land closest to the requested fractions.
+
+    Cutting on a **date**, not a row index. Loans issued in the same month
+    share an origination cohort — the same credit policy, the same marketing,
+    the same macro conditions — so slicing through a month puts near-siblings
+    on both sides of the boundary. The leak is small but it is real, and it is
+    free to avoid.
+
+    The cost is that the realised fractions are approximate, because months
+    have wildly different volumes here: 2007 has hundreds of loans and 2015 has
+    tens of thousands. The achieved split is reported rather than assumed.
+    """
+    counts = dates.dt.to_period("M").value_counts().sort_index()
+    cumulative = counts.cumsum() / counts.sum()
+
+    train_cut = cumulative[cumulative >= train_fraction].index[0]
+    val_cut = cumulative[cumulative >= train_fraction + val_fraction].index[0]
+    return train_cut.to_timestamp(), val_cut.to_timestamp()
+
+
+def chronological_split(df: pd.DataFrame) -> SplitResult:
+    """Train on the past, test on the future. Never at random.
 
     A random split on time-structured data leaks the future into training and
-    inflates every number that follows. Because practice genuinely shifts across
-    this period, a random split would let the model see post-2007 prescribing
-    patterns while being evaluated on them.
+    inflates every number that follows. Lending Club's book changed enormously
+    across this period — volume, grade mix, and the credit policy itself — so a
+    random split would let the model see 2015 underwriting while being scored
+    on it.
     """
     settings = get_settings().data
 
-    # Censoring buffer first: the discarded tail would otherwise land entirely
-    # in the test set, depressing every held-out metric for a reason that has
-    # nothing to do with the model.
-    ordered, censoring = apply_censoring_buffer(df)
+    dates = clean.parse_issue_date(df)
+    ordered = df.assign(_issued=dates).sort_values("_issued", kind="stable")
 
-    n = len(ordered)
-    train_end = int(n * settings.train_fraction)
-    val_end = train_end + int(n * settings.val_fraction)
+    train_cut, val_cut = month_boundaries(
+        ordered["_issued"], settings.train_fraction, settings.val_fraction
+    )
 
-    train = ordered.iloc[:train_end].copy()
-    val = ordered.iloc[train_end:val_end].copy()
-    test = ordered.iloc[val_end:].copy()
+    train = ordered[ordered["_issued"] < train_cut].drop(columns="_issued").copy()
+    val = ordered[(ordered["_issued"] >= train_cut) & (ordered["_issued"] < val_cut)]
+    val = val.drop(columns="_issued").copy()
+    test = ordered[ordered["_issued"] >= val_cut].drop(columns="_issued").copy()
 
-    # Cheap, absolute guarantee — the failure this protects against is silent.
-    assert train[schema.ENCOUNTER_ID].max() < val[schema.ENCOUNTER_ID].min()
-    assert val[schema.ENCOUNTER_ID].max() < test[schema.ENCOUNTER_ID].min()
-    overlap = set(train[schema.PATIENT_ID]) & set(test[schema.PATIENT_ID])
-    assert not overlap, f"{len(overlap)} patients straddle train/test"
+    # Cheap, absolute guarantees. The failure they protect against is silent:
+    # a mis-ordered split still trains, still scores, and simply reports
+    # numbers that are too good.
+    train_dates = clean.parse_issue_date(train)
+    val_dates = clean.parse_issue_date(val)
+    test_dates = clean.parse_issue_date(test)
+    assert train_dates.max() < val_dates.min(), "train overlaps val in time"
+    assert val_dates.max() < test_dates.min(), "val overlaps test in time"
+    assert len(train) + len(val) + len(test) == len(df), "rows lost in splitting"
+
+    limitations = []
+    if not BORROWER_IDENTITY_AVAILABLE:
+        limitations.append(
+            "member_id is null for every row, so repeat borrowers cannot be "
+            "detected and may appear in both train and test. Held-out metrics "
+            "are inflated to whatever extent repeat borrowing occurs."
+        )
 
     boundaries = {
-        "train_min": int(train[schema.ENCOUNTER_ID].min()),
-        "train_max": int(train[schema.ENCOUNTER_ID].max()),
-        "val_max": int(val[schema.ENCOUNTER_ID].max()),
-        "test_max": int(test[schema.ENCOUNTER_ID].max()),
+        "train_start": str(train_dates.min().date()),
+        "train_end": str(train_dates.max().date()),
+        "val_end": str(val_dates.max().date()),
+        "test_end": str(test_dates.max().date()),
     }
 
-    result = SplitResult(train, val, test, verification, boundaries, censoring)
-    log.info("split_complete", **result.summary())
+    result = SplitResult(train, val, test, boundaries, limitations)
+    log.info("chronological_split", **result.summary())
     return result
 
 
+def reference_window(split: SplitResult) -> pd.DataFrame:
+    """The frozen window drift is measured against.
+
+    The training split, deliberately: drift means "different from what the
+    model learned", so the reference has to be exactly what it learned from.
+    Using a later window would measure drift against data the model never saw.
+    """
+    return split.train.copy()
+
+
 __all__ = [
-    "MIN_TRENDING_SIGNALS",
-    "ProxySignal",
-    "ProxyVerification",
+    "BORROWER_IDENTITY_AVAILABLE",
     "SplitResult",
     "chronological_split",
-    "detect_discontinuities",
-    "verify_time_proxy",
+    "month_boundaries",
+    "reference_window",
 ]
