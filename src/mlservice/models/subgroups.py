@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import average_precision_score, brier_score_loss, recall_score
 
+from mlservice.data import schema
 from mlservice.logging_ import get_logger
 from mlservice.models.calibration import expected_calibration_error
 
@@ -104,6 +105,32 @@ class SubgroupReport:
         }
 
 
+def add_income_band(df: pd.DataFrame, column: str = "annual_inc") -> pd.DataFrame:
+    """Add a quantile-based ``income_band`` column for subgroup analysis.
+
+    Quantiles rather than fixed dollar thresholds. Incomes drift over an
+    eleven-year span, so a fixed "$50k" band would hold a different slice of
+    the population in 2015 than in 2007 and any trend in its metrics would be
+    partly an artefact of inflation.
+
+    Derived at evaluation time and never a feature: the model must not be
+    given a coarsened copy of a variable it already has, and a band is only
+    useful for *reporting* disparity.
+    """
+    out = df.copy()
+    try:
+        out["income_band"] = pd.qcut(
+            out[column], q=len(schema.INCOME_BAND_LABELS), labels=list(schema.INCOME_BAND_LABELS)
+        )
+    except ValueError:
+        # qcut fails when the distribution is too degenerate to cut — a tiny
+        # slice, or one income repeated. Reporting "unbandable" is honest;
+        # silently falling back to equal-width bins would relabel the groups
+        # without saying so.
+        out["income_band"] = "unbandable"
+    return out
+
+
 def evaluate_subgroups(
     df: pd.DataFrame,
     y_true: np.ndarray,
@@ -113,10 +140,11 @@ def evaluate_subgroups(
 ) -> SubgroupReport:
     """Per-subgroup metrics at the production operating threshold.
 
-    The **same** threshold is applied to every group. Per-group thresholds would
-    improve the numbers and would be indefensible: it means treating patients
-    differently based on demographics, which is the thing fairness analysis
-    exists to detect rather than to implement.
+    The **same** threshold is applied to every group. Per-group thresholds
+    would improve the numbers and would be flatly illegal here: setting a
+    different approval bar by geography or income is disparate treatment,
+    which is the thing this analysis exists to DETECT rather than to
+    implement.
     """
     y_true = np.asarray(y_true)
     y_score = np.asarray(y_score)
@@ -196,5 +224,6 @@ __all__ = [
     "MIN_SUBGROUP_N",
     "SubgroupMetrics",
     "SubgroupReport",
+    "add_income_band",
     "evaluate_subgroups",
 ]

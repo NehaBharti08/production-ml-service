@@ -63,7 +63,11 @@ def candidates(seed: int) -> list[Candidate]:
         Candidate(
             name="logistic_l2",
             estimator=LogisticRegression(
-                penalty="l2",
+                # l1_ratio=0 rather than penalty="l2": sklearn 1.8 deprecated
+                # the penalty argument and removes it in 1.10. The warning
+                # surfaced on the first full training run, which is the point
+                # at which a deprecation is cheapest to fix.
+                l1_ratio=0,
                 C=1.0,
                 max_iter=2000,
                 # Weighting matters far more than the solver here: at a 14.8%
@@ -79,7 +83,7 @@ def candidates(seed: int) -> list[Candidate]:
         Candidate(
             name="logistic_l2_strong",
             estimator=LogisticRegression(
-                penalty="l2",
+                l1_ratio=0,
                 C=0.05,  # heavier regularisation
                 max_iter=2000,
                 class_weight="balanced",
@@ -171,8 +175,12 @@ def train_candidate(
         test_cal = calibration.expected_calibration_error(np.asarray(y_test), test_score)
         test_cal.method = method
 
+        # income_band is derived here rather than stored: it is a reporting
+        # slice, not a feature, and the model must not be handed a coarsened
+        # copy of annual_inc which it already has.
+        banded = subgroups.add_income_band(test)
         sub = subgroups.evaluate_subgroups(
-            test, np.asarray(y_test), test_score, threshold, schema.SUBGROUP_DIMENSIONS
+            banded, np.asarray(y_test), test_score, threshold, schema.SUBGROUP_DIMENSIONS
         )
 
         mlflow.log_params(
