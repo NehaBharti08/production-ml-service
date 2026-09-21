@@ -9,10 +9,11 @@ metric nearly intact while making individual predictions nonsense.
 Three families, each answering a different question:
 
 *   **Invariance** — does something that should not matter change the answer?
-    Patient identity, field ordering, batch position.
+    Field ordering, batch position, an unrelated field changing.
 *   **Directional** — does something that should matter move the answer the
-    right way? These encode clinical priors and are the strongest available
-    check that the pipeline is wired correctly.
+    right way? These encode CREDIT priors — more leverage is riskier, a
+    better FICO is safer — and are the strongest available check that the
+    pipeline is wired correctly.
 *   **Robustness** — does an input the model has never seen degrade one
     prediction, or take the service down?
 
@@ -31,7 +32,7 @@ from typing import Any
 
 import pytest
 
-from mlservice.api.schemas import EXAMPLE_FEATURES, PatientFeatures
+from mlservice.api.schemas import EXAMPLE_FEATURES, LoanApplication
 
 pytestmark = [pytest.mark.behavior, pytest.mark.slow]
 
@@ -64,7 +65,7 @@ def model() -> Any:
 
 def _score(model: Any, **overrides: Any) -> float:
     features = {**copy.deepcopy(EXAMPLE_FEATURES), **overrides}
-    return model.predict_proba(PatientFeatures(**features).to_model_row())
+    return model.predict_proba(LoanApplication(**features).to_model_row())
 
 
 # --------------------------------------------------------------------------- #
@@ -84,9 +85,9 @@ class TestInvariance:
         If this ever fails, the pipeline is relying on positional column order —
         which works until a caller serialises their JSON differently.
         """
-        forward = PatientFeatures(**EXAMPLE_FEATURES).to_model_row()
+        forward = LoanApplication(**EXAMPLE_FEATURES).to_model_row()
         reversed_keys = dict(reversed(list(EXAMPLE_FEATURES.items())))
-        backward = PatientFeatures(**reversed_keys).to_model_row()
+        backward = LoanApplication(**reversed_keys).to_model_row()
         assert abs(model.predict_proba(forward) - model.predict_proba(backward)) < EXACT
 
     def test_batch_position_does_not_change_a_prediction(self, model: Any) -> None:
@@ -96,8 +97,8 @@ class TestInvariance:
         the incoming batch rather than applying the fitted one would pass every
         aggregate metric and fail here.
         """
-        a = PatientFeatures(**EXAMPLE_FEATURES).to_model_row()
-        b = PatientFeatures(**{**EXAMPLE_FEATURES, "number_inpatient": 6}).to_model_row()
+        a = LoanApplication(**EXAMPLE_FEATURES).to_model_row()
+        b = LoanApplication(**{**EXAMPLE_FEATURES, "dti": 35.0}).to_model_row()
 
         first = model.predict_proba_batch([a, b])
         swapped = model.predict_proba_batch([b, a])
@@ -107,11 +108,11 @@ class TestInvariance:
 
     def test_batch_and_single_agree(self, model: Any) -> None:
         """The two endpoints must not disagree about the same patient."""
-        row = PatientFeatures(**EXAMPLE_FEATURES).to_model_row()
+        row = LoanApplication(**EXAMPLE_FEATURES).to_model_row()
         assert abs(model.predict_proba(row) - model.predict_proba_batch([row])[0]) < EXACT
 
     def test_batch_size_does_not_change_a_score(self, model: Any) -> None:
-        row = PatientFeatures(**EXAMPLE_FEATURES).to_model_row()
+        row = LoanApplication(**EXAMPLE_FEATURES).to_model_row()
         alone = model.predict_proba_batch([row])[0]
         crowded = model.predict_proba_batch([row] * 50)[0]
         assert abs(alone - crowded) < EXACT
@@ -123,124 +124,168 @@ class TestInvariance:
 
 
 class TestDirectionalExpectations:
-    """Clinical priors, asserted as monotonic relationships.
+    """Priors that must hold, or the pipeline is miswired.
 
-    These are the tests that catch a corrupted feature pipeline. A transformer
-    that dropped `number_inpatient` would leave PR-AUC almost unchanged — the
-    remaining features carry correlated signal — while making the model blind to
-    the single strongest predictor. Only a directional test notices.
+    These are the tests an aggregate metric cannot replace. A transform that
+    silently dropped `dti` would leave PR-AUC almost unchanged — the remaining
+    features carry correlated signal — while making the model blind to
+    leverage. Only a directional test notices.
 
-    Where a prior is genuinely uncertain, the assertion is deliberately weak
-    (monotone, not a specific magnitude): overfitting a test to the current
-    coefficients would make it a change-detector rather than a correctness check.
+    Every relationship below was **verified against the trained artifact
+    before being asserted**. Writing down a prior that the model does not
+    actually satisfy would turn this suite into a source of false confidence,
+    which is worse than not having it.
+
+    The assertions are weakly monotone (``>=``) on purpose: isotonic
+    calibration produces a step function, so adjacent inputs legitimately
+    share a score. Strict monotonicity would fail on the plateaus and teach
+    everyone to ignore the suite.
     """
 
-    def test_more_prior_inpatient_admissions_never_lowers_risk(self, model: Any) -> None:
-        """The strongest single predictor in the data, and the clearest prior.
+    def test_more_leverage_never_lowers_risk(self, model: Any) -> None:
+        """Debt-to-income is the clearest prior in credit risk."""
+        scores = [_score(model, dti=v) for v in (5, 15, 25, 35)]
+        for low, high in pairwise(scores):
+            assert high >= low - DIRECTIONAL_MARGIN, f"raising DTI lowered predicted risk: {scores}"
 
-        Prior utilisation is the feature the Phase 1 heuristic baseline was built
-        on. If the relationship inverted, something is badly wrong.
+    def test_a_better_fico_never_raises_risk(self, model: Any) -> None:
+        """The inverse direction, which catches a sign error the others cannot."""
+        scores = [_score(model, fico_range_low=v) for v in (620, 680, 740, 800)]
+        for high_risk, low_risk in pairwise(scores):
+            assert low_risk <= high_risk + DIRECTIONAL_MARGIN, (
+                f"a better FICO raised predicted risk: {scores}"
+            )
+
+    def test_a_worse_grade_never_lowers_risk(self, model: Any) -> None:
+        """Grade is the lender's own ordering, so it must be respected.
+
+        This one is close to a tautology — `grade` carries the model's largest
+        coefficient — which is exactly why breaking it would mean something is
+        badly wrong.
         """
-        scores = [_score(model, number_inpatient=n) for n in (0, 1, 2, 4, 8)]
-        assert all(later >= earlier - DIRECTIONAL_MARGIN for earlier, later in pairwise(scores)), (
-            f"risk fell as prior admissions rose: {scores}"
-        )
-        # And the relationship must be real, not flat.
-        assert scores[-1] > scores[0] + DIRECTIONAL_MARGIN
+        scores = [_score(model, grade=g, sub_grade=f"{g}3") for g in ("A", "C", "E", "G")]
+        for better, worse in pairwise(scores):
+            assert worse >= better - DIRECTIONAL_MARGIN, (
+                f"a worse grade lowered predicted risk: {scores}"
+            )
 
-    def test_more_prior_emergency_visits_never_lowers_risk(self, model: Any) -> None:
-        scores = [_score(model, number_emergency=n) for n in (0, 1, 3, 6)]
-        assert all(later >= earlier - DIRECTIONAL_MARGIN for earlier, later in pairwise(scores)), (
-            f"risk fell as emergency visits rose: {scores}"
-        )
-
-    def test_longer_stay_moves_risk_monotonically(self, model: Any) -> None:
-        """Direction is not asserted, only monotonicity.
-
-        Length of stay is genuinely ambiguous — a longer stay signals a sicker
-        patient but also more thorough treatment. Pinning a direction would
-        encode an assumption the data may not support; requiring *consistency*
-        still catches a scrambled feature mapping.
-        """
-        scores = [_score(model, time_in_hospital=d) for d in (1, 3, 7, 14)]
-        deltas = [b - a for a, b in pairwise(scores)]
-        non_decreasing = all(d >= -DIRECTIONAL_MARGIN for d in deltas)
-        non_increasing = all(d <= DIRECTIONAL_MARGIN for d in deltas)
-        assert non_decreasing or non_increasing, f"non-monotonic in length of stay: {scores}"
-
-    def test_number_of_diagnoses_moves_risk_monotonically(self, model: Any) -> None:
-        scores = [_score(model, number_diagnoses=n) for n in (1, 5, 9, 16)]
-        deltas = [b - a for a, b in pairwise(scores)]
-        assert all(d >= -DIRECTIONAL_MARGIN for d in deltas) or all(
-            d <= DIRECTIONAL_MARGIN for d in deltas
-        ), f"non-monotonic in diagnosis count: {scores}"
-
-    def test_prior_utilisation_actually_influences_the_score(self, model: Any) -> None:
-        """A guard against the feature being dropped entirely.
-
-        If `number_inpatient` stopped reaching the model, every score would be
-        identical across its whole range and aggregate metrics would barely move.
-        """
-        low, high = _score(model, number_inpatient=0), _score(model, number_inpatient=10)
-        assert abs(high - low) > 1e-4, (
-            "number_inpatient has no measurable effect — the feature is probably "
-            "not reaching the model"
+    def test_a_longer_term_never_lowers_risk(self, model: Any) -> None:
+        """60-month loans default more than 36-month ones. Well established."""
+        short = _score(model, term=" 36 months")
+        long = _score(model, term=" 60 months")
+        assert long >= short - DIRECTIONAL_MARGIN, (
+            f"a 60-month term scored lower than 36-month: {short:.4f} vs {long:.4f}"
         )
 
+    def test_more_recent_delinquencies_never_lower_risk(self, model: Any) -> None:
+        scores = [_score(model, delinq_2yrs=v) for v in (0, 1, 3, 6)]
+        for low, high in pairwise(scores):
+            assert high >= low - DIRECTIONAL_MARGIN, f"delinquencies lowered risk: {scores}"
 
-# --------------------------------------------------------------------------- #
-# Robustness
-# --------------------------------------------------------------------------- #
+    def test_more_recent_inquiries_never_lower_risk(self, model: Any) -> None:
+        scores = [_score(model, inq_last_6mths=v) for v in (0, 1, 3, 6)]
+        for low, high in pairwise(scores):
+            assert high >= low - DIRECTIONAL_MARGIN, f"inquiries lowered risk: {scores}"
+
+    @pytest.mark.parametrize(
+        ("field", "low", "high"),
+        [
+            ("dti", 5, 38),
+            ("fico_range_low", 820, 615),
+            ("term", " 36 months", " 60 months"),
+        ],
+    )
+    def test_the_strong_features_materially_influence_the_score(
+        self, model: Any, field: str, low: Any, high: Any
+    ) -> None:
+        """Monotone but flat is a failure mode of its own.
+
+        If a feature stopped reaching the model, every score would still be
+        weakly monotone in it — trivially, because nothing would change. These
+        three must move the score by a visible amount, so a silently dropped
+        column is caught rather than passing the monotonicity checks above.
+        """
+        safe, risky = _score(model, **{field: low}), _score(model, **{field: high})
+        assert risky - safe > 0.005, (
+            f"{field} barely moved the score ({safe:.4f} -> {risky:.4f}); "
+            "the feature may not be reaching the model"
+        )
 
 
 class TestRobustness:
     def test_unseen_category_degrades_rather_than_raises(self, model: Any) -> None:
-        """A new hospital specialty must not take the service down.
+        """A loan purpose the model has never seen must not take the service down.
 
-        This is what `handle_unknown="infrequent_if_exist"` buys. Without it the
-        first unfamiliar value would raise, turning a survivable degradation into
-        a 500 for that caller.
+        This is what ``handle_unknown="infrequent_if_exist"`` buys. Without it
+        the first unfamiliar value would raise, turning a survivable
+        degradation into a 500 for that caller.
         """
-        score = _score(model, medical_specialty="AstronauticalMedicine")
+        score = _score(model, purpose="crypto_mining_rig")
         assert 0.0 <= score <= 1.0
 
     def test_unseen_categories_in_several_fields_at_once(self, model: Any) -> None:
         score = _score(
             model,
-            medical_specialty="NewSpecialty",
-            diag_1="NewBand",
-            race="NewCategory",
-            insulin="NewValue",
+            purpose="unheard_of",
+            home_ownership="TIMESHARE",
+            verification_status="Partially Verified",
+            emp_length="17 years",
         )
         assert 0.0 <= score <= 1.0
 
-    @pytest.mark.parametrize("age", ["[0-10)", "[40-50)", "[90-100)"])
-    def test_every_age_band_scores(self, model: Any, age: str) -> None:
-        assert 0.0 <= _score(model, age=age) <= 1.0
+    @pytest.mark.parametrize("grade", ["A", "D", "G"])
+    def test_every_grade_scores(self, model: Any, grade: str) -> None:
+        assert 0.0 <= _score(model, grade=grade, sub_grade=f"{grade}3") <= 1.0
+
+    def test_omitting_the_whole_optional_bureau_tail_still_scores(self, model: Any) -> None:
+        """The most likely real-world request shape.
+
+        A caller with only an application form and a credit score sends the
+        required core and nothing else. If imputation were broken this is
+        where it would surface — and it is the shape the startup canary uses
+        for exactly that reason.
+        """
+        required_only = {
+            "loan_amnt": 12000.0,
+            "term": " 60 months",
+            "int_rate": 15.0,
+            "installment": 285.0,
+            "grade": "C",
+            "sub_grade": "C2",
+            "purpose": "credit_card",
+            "annual_inc": 48000.0,
+            "home_ownership": "RENT",
+            "verification_status": "Not Verified",
+            "addr_state": "TX",
+            "dti": 22.0,
+            "fico_range_low": 675.0,
+        }
+        score = model.predict_proba(LoanApplication(**required_only).to_model_row())
+        assert 0.0 <= score <= 1.0
 
     def test_boundary_values_score(self, model: Any) -> None:
         """The extremes of every numeric range the schema permits."""
         low = _score(
             model,
-            time_in_hospital=1,
-            num_lab_procedures=0,
-            num_procedures=0,
-            num_medications=0,
-            number_outpatient=0,
-            number_emergency=0,
-            number_inpatient=0,
-            number_diagnoses=1,
+            loan_amnt=500.0,
+            int_rate=5.4,
+            installment=16.0,
+            annual_inc=1896.0,
+            dti=0.0,
+            fico_range_low=845.0,
+            revol_util=0.0,
+            open_acc=0.0,
         )
         high = _score(
             model,
-            time_in_hospital=14,
-            num_lab_procedures=200,
-            num_procedures=20,
-            num_medications=100,
-            number_outpatient=100,
-            number_emergency=100,
-            number_inpatient=100,
-            number_diagnoses=20,
+            loan_amnt=35000.0,
+            int_rate=26.0,
+            installment=1410.0,
+            annual_inc=7_500_000.0,
+            dti=40.0,
+            fico_range_low=610.0,
+            revol_util=100.0,
+            open_acc=84.0,
         )
         assert 0.0 <= low <= 1.0
         assert 0.0 <= high <= 1.0
@@ -252,15 +297,15 @@ class TestRobustness:
         probability that is not a probability breaks the threshold comparison,
         the metric histogram and the calibration report at once.
         """
-        for inpatient in (0, 3, 20, 100):
-            for stay in (1, 7, 14):
-                score = _score(model, number_inpatient=inpatient, time_in_hospital=stay)
-                assert 0.0 <= score <= 1.0, f"score {score} outside [0,1]"
-
-
-# --------------------------------------------------------------------------- #
-# The suite must be able to fail
-# --------------------------------------------------------------------------- #
+        for dti in (0, 15, 30, 40):
+            for fico in (610, 700, 845):
+                for grade in ("A", "D", "G"):
+                    score = _score(
+                        model, dti=dti, fico_range_low=fico, grade=grade, sub_grade=f"{grade}3"
+                    )
+                    assert 0.0 <= score <= 1.0, (
+                        f"dti={dti} fico={fico} grade={grade} produced {score}"
+                    )
 
 
 class TestTheSuiteItself:
@@ -272,7 +317,7 @@ class TestTheSuiteItself:
 
     def test_directional_check_catches_an_inverted_model(self, model: Any) -> None:
         """Invert the score and confirm the monotonicity assertion would fail."""
-        scores = [1.0 - _score(model, number_inpatient=n) for n in (0, 1, 2, 4, 8)]
+        scores = [1.0 - _score(model, dti=v) for v in (5, 15, 25, 35)]
         monotone = all(later >= earlier - DIRECTIONAL_MARGIN for earlier, later in pairwise(scores))
         assert not monotone, (
             "an inverted model still passed the monotonicity check — the "
@@ -281,7 +326,7 @@ class TestTheSuiteItself:
 
     def test_invariance_check_catches_a_position_dependent_model(self, model: Any) -> None:
         """Simulate cross-row coupling and confirm the invariance test would fail."""
-        row = PatientFeatures(**EXAMPLE_FEATURES).to_model_row()
+        row = LoanApplication(**EXAMPLE_FEATURES).to_model_row()
         base = model.predict_proba(row)
         # A model whose output depended on batch index would produce this.
         coupled = [base + 0.01 * i for i in range(3)]

@@ -156,61 +156,82 @@ drift:
     generated_by: "mlservice.monitoring.null_calibration"
     calibration:
       n_null_windows: 20
-      window_rows: 1994
+      window_rows: 19467
       percentile: 99
       floor: 0.1
       ceiling: 0.25
-      n_clamped_to_floor: 37
-      n_clamped_to_ceiling: 2
+      n_clamped_to_floor: 57
+      n_clamped_to_ceiling: 3
       n_unclamped: 4
 
     # Each value is that feature's OWN 99th-percentile PSI between
     # adjacent stable training windows, clamped to the credit-risk
     # convention. Regenerate with: uv run mlservice monitor calibrate
     thresholds:
-      A1Cresult: 0.1
-      acarbose: 0.1
-      acetohexamide: 0.1
-      admission_source_id: 0.25
-      admission_type_id: 0.151419
-      age: 0.1
-      change: 0.1
-      chlorpropamide: 0.1
-      diabetesMed: 0.1
-      diag_1: 0.1
-      diag_2: 0.1
-      diag_3: 0.1
-      discharge_disposition_id: 0.25
-      gender: 0.1
-      glimepiride: 0.1
-      glimepiride-pioglitazone: 0.1
-      glipizide: 0.1
-      glipizide-metformin: 0.1
-      glyburide: 0.1
-      glyburide-metformin: 0.1
-      insulin: 0.1
-      max_glu_serum: 0.1
-      medical_specialty: 0.24231
-      metformin: 0.1
-      metformin-pioglitazone: 0.1
-      metformin-rosiglitazone: 0.1
-      miglitol: 0.1
-      nateglinide: 0.1
-      num_lab_procedures: 0.168198
-      num_medications: 0.1
-      num_procedures: 0.1
-      number_diagnoses: 0.220989
-      number_emergency: 0.1
-      number_inpatient: 0.1
-      number_outpatient: 0.1
-      pioglitazone: 0.1
-      race: 0.1
-      repaglinide: 0.1
-      rosiglitazone: 0.1
-      time_in_hospital: 0.1
-      tolazamide: 0.1
-      tolbutamide: 0.1
-      troglitazone: 0.1
+      acc_now_delinq: 0.1
+      acc_open_past_24mths: 0.1
+      addr_state: 0.1
+      annual_inc: 0.1
+      application_type: 0.1
+      avg_cur_bal: 0.1
+      bc_open_to_buy: 0.1
+      bc_util: 0.1
+      chargeoff_within_12_mths: 0.1
+      collections_12_mths_ex_med: 0.1
+      credit_history_months: 0.1
+      delinq_2yrs: 0.1
+      delinq_amnt: 0.1
+      dti: 0.1
+      emp_length: 0.1
+      fico_range_low: 0.1
+      grade: 0.107946
+      home_ownership: 0.1
+      initial_list_status: 0.25
+      inq_last_6mths: 0.1
+      installment: 0.1
+      int_rate: 0.25
+      loan_amnt: 0.1
+      mo_sin_old_il_acct: 0.1
+      mo_sin_old_rev_tl_op: 0.1
+      mo_sin_rcnt_rev_tl_op: 0.1
+      mo_sin_rcnt_tl: 0.1
+      mort_acc: 0.1
+      mths_since_recent_bc: 0.1
+      mths_since_recent_inq: 0.1
+      num_accts_ever_120_pd: 0.1
+      num_actv_bc_tl: 0.1
+      num_actv_rev_tl: 0.1
+      num_bc_sats: 0.1
+      num_bc_tl: 0.1
+      num_il_tl: 0.1
+      num_op_rev_tl: 0.1
+      num_rev_accts: 0.1
+      num_rev_tl_bal_gt_0: 0.1
+      num_sats: 0.1
+      num_tl_120dpd_2m: 0.1
+      num_tl_30dpd: 0.1
+      num_tl_90g_dpd_24m: 0.1
+      num_tl_op_past_12m: 0.1
+      open_acc: 0.1
+      pct_tl_nvr_dlq: 0.1
+      percent_bc_gt_75: 0.1
+      pub_rec: 0.1
+      pub_rec_bankruptcies: 0.1
+      purpose: 0.1
+      revol_bal: 0.100389
+      revol_util: 0.1
+      sub_grade: 0.138784
+      tax_liens: 0.1
+      term: 0.25
+      tot_coll_amt: 0.1
+      tot_cur_bal: 0.1
+      tot_hi_cred_lim: 0.1
+      total_acc: 0.1
+      total_bal_ex_mort: 0.1
+      total_bc_limit: 0.1
+      total_il_high_credit_limit: 0.1
+      total_rev_hi_lim: 0.1
+      verification_status: 0.121306
 
   # -------------------------------------------------------------------------
   # Alert conditions
