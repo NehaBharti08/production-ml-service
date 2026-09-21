@@ -114,47 +114,50 @@ def chronological_windows(
     return windows
 
 
-def induce_age_shift(
+def induce_grade_shift(
     window: pd.DataFrame,
-    target_bands: tuple[str, ...] = ("[70-80)", "[80-90)"),
+    target_grades: tuple[str, ...] = ("E", "F", "G"),
     weight: float = 4.0,
 ) -> tuple[pd.DataFrame, Manipulation]:
-    """Over-sample older patients — a plausible demographic shift.
+    """Over-sample low grades — a lender loosening its credit policy.
 
-    Chosen because age is a real risk factor here (Phase 2 measured recall from
-    0.233 at [40-50) to 0.692 at [80-90)), so shifting it moves both the input
-    distribution *and* the score distribution. That exercises data drift and
-    prediction drift together, which a synthetic column could not.
+    The most realistic drift in this domain, and it genuinely happened: Lending
+    Club's grade mix moved repeatedly across 2007-2015 as they chased volume.
+
+    Chosen because `grade` carries the largest coefficient in the champion
+    (grade_A at -0.78), so shifting it moves the input distribution **and** the
+    score distribution together. That exercises data drift and prediction
+    drift in one manipulation, which a synthetic column could not.
     """
-    before = window["age"].value_counts(normalize=True).to_dict()
+    before = window["grade"].value_counts(normalize=True).to_dict()
 
-    weights = np.where(window["age"].isin(target_bands), weight, 1.0)
+    weights = np.where(window["grade"].isin(target_grades), weight, 1.0)
     weights = weights / weights.sum()
     rng = np.random.default_rng(42)
     idx = rng.choice(len(window), size=len(window), replace=True, p=weights)
     shifted = window.iloc[idx].reset_index(drop=True)
 
-    after = shifted["age"].value_counts(normalize=True).to_dict()
+    after = shifted["grade"].value_counts(normalize=True).to_dict()
     return shifted, Manipulation(
-        feature="age",
+        feature="grade",
         kind="resample",
         detail=(
-            f"over-sampled {list(target_bands)} with weight {weight} — a plausible "
-            "demographic shift toward an older population"
+            f"over-sampled grades {list(target_grades)} with weight {weight} — a "
+            "lender loosening credit policy to chase volume"
         ),
         before={k: round(float(v), 4) for k, v in sorted(before.items())},
         after={k: round(float(v), 4) for k, v in sorted(after.items())},
     )
 
 
-def induce_utilisation_shift(
-    window: pd.DataFrame, feature: str = "number_inpatient", shift: int = 2
+def induce_leverage_shift(
+    window: pd.DataFrame, feature: str = "dti", shift: float = 8.0
 ) -> tuple[pd.DataFrame, Manipulation]:
-    """Add prior admissions — simulates a sicker referred population.
+    """Raise debt-to-income across the board — a macro deterioration.
 
-    ``number_inpatient`` is the strongest single predictor, so this produces a
-    large, obvious prediction shift. Deliberately blunt: the point of an induced
-    demo is that the detector's response is unambiguous.
+    Models borrowers arriving more leveraged than the training population, the
+    way they would in a downturn. Deliberately blunt: the point of an induced
+    demo is that the detector's response is unambiguous, not subtle.
     """
     before = {
         "mean": round(float(window[feature].mean()), 4),
@@ -169,27 +172,31 @@ def induce_utilisation_shift(
     return shifted, Manipulation(
         feature=feature,
         kind="additive_shift",
-        detail=f"added {shift} prior admissions to every record — a sicker referred population",
+        detail=(
+            f"added {shift} points of debt-to-income to every borrower — a "
+            "macro deterioration in household leverage"
+        ),
         before=before,
         after=after,
     )
 
 
-def induce_specialty_collapse(
-    window: pd.DataFrame, keep: str = "InternalMedicine"
+def induce_purpose_collapse(
+    window: pd.DataFrame, keep: str = "debt_consolidation"
 ) -> tuple[pd.DataFrame, Manipulation]:
-    """Collapse medical_specialty to one value — an upstream recording change.
+    """Collapse ``purpose`` to one value — an upstream recording change.
 
-    Models a very common real failure: a source system stops populating a field
-    properly. Included because it is the kind of drift that is *not* a
-    population change at all, and the response differs — you fix the pipeline,
-    you do not retrain.
+    Models a very common real failure: a source system stops populating a
+    field properly, or a new application form defaults it. Included because it
+    is the kind of drift that is **not a population change at all**, and the
+    correct response differs completely — you fix the pipeline, you do not
+    retrain. Retraining on it would bake the break into the model.
     """
-    before = window["medical_specialty"].value_counts(normalize=True).head(5).to_dict()
+    before = window["purpose"].value_counts(normalize=True).head(5).to_dict()
     shifted = window.copy()
-    shifted["medical_specialty"] = keep
+    shifted["purpose"] = keep
     return shifted, Manipulation(
-        feature="medical_specialty",
+        feature="purpose",
         kind="collapse",
         detail=(
             f"forced every record to '{keep}' — models an upstream system that "
@@ -201,15 +208,15 @@ def induce_specialty_collapse(
 
 
 INDUCERS: dict[str, Callable[..., tuple[pd.DataFrame, Manipulation]]] = {
-    "age": induce_age_shift,
-    "utilisation": induce_utilisation_shift,
-    "specialty": induce_specialty_collapse,
+    "grade": induce_grade_shift,
+    "leverage": induce_leverage_shift,
+    "purpose": induce_purpose_collapse,
 }
 
 
 def induced_windows(
     frame: pd.DataFrame,
-    inducer: str = "age",
+    inducer: str = "grade",
     window_rows: int | None = None,
     clean_windows: int = 2,
     drifted_windows: int = 3,
@@ -325,9 +332,9 @@ __all__ = [
     "ReplayResult",
     "ReplayWindow",
     "chronological_windows",
-    "induce_age_shift",
-    "induce_specialty_collapse",
-    "induce_utilisation_shift",
+    "induce_grade_shift",
+    "induce_leverage_shift",
+    "induce_purpose_collapse",
     "induced_windows",
     "save_result",
     "simulate_maturation",

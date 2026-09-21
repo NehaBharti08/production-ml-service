@@ -92,20 +92,27 @@ class TestPSI:
 
 
 def _stable_frame(rng: np.random.Generator, n: int = 4000) -> pd.DataFrame:
+    """A stationary loan book.
+
+    ``issue_d`` is a real date column here, not an integer id, because the
+    empirical-null calibration sorts by it to build consecutive windows — and
+    "consecutive" has to mean consecutive in time or the null it measures is
+    the churn between arbitrary groups.
+    """
     return pd.DataFrame(
         {
-            "encounter_id": np.arange(n),
-            "time_in_hospital": rng.integers(1, 14, n),
-            "num_lab_procedures": rng.integers(0, 100, n),
-            "num_procedures": rng.integers(0, 6, n),
-            "num_medications": rng.integers(1, 40, n),
-            "number_outpatient": rng.integers(0, 3, n),
-            "number_emergency": rng.integers(0, 2, n),
-            "number_inpatient": rng.integers(0, 4, n),
-            "number_diagnoses": rng.integers(1, 16, n),
-            "race": rng.choice(["A", "B", "C"], n),
-            "gender": rng.choice(["M", "F"], n),
-            "age": rng.choice(["[60-70)", "[70-80)"], n),
+            "issue_d": pd.date_range("2012-01-01", periods=n, freq="h"),
+            "loan_amnt": rng.integers(1000, 35000, n).astype(float),
+            "int_rate": rng.uniform(5.0, 26.0, n),
+            "installment": rng.uniform(20, 1400, n),
+            "annual_inc": rng.lognormal(11.0, 0.5, n),
+            "dti": rng.uniform(0, 40, n),
+            "fico_range_low": rng.integers(610, 845, n).astype(float),
+            "open_acc": rng.integers(0, 40, n).astype(float),
+            "revol_util": rng.uniform(0, 100, n),
+            "grade": rng.choice(list("ABCDEFG"), n),
+            "purpose": rng.choice(["debt_consolidation", "credit_card", "car"], n),
+            "home_ownership": rng.choice(["MORTGAGE", "RENT", "OWN"], n),
         }
     )
 
@@ -158,12 +165,12 @@ class TestDetection:
     def test_a_shifted_feature_is_flagged(self, rng: np.random.Generator) -> None:
         reference = _stable_frame(rng)
         current = reference.copy()
-        current["number_inpatient"] = current["number_inpatient"] + 5
+        current["dti"] = current["dti"] + 15
 
         thresholds = dict.fromkeys(reference.columns, 0.1)
         results = drift.detect_data_drift(reference, current, thresholds)
         breaching = {r.feature for r in results if r.breaching}
-        assert "number_inpatient" in breaching
+        assert "dti" in breaching
 
     def test_a_feature_without_a_calibrated_threshold_is_skipped(
         self, rng: np.random.Generator
@@ -171,18 +178,18 @@ class TestDetection:
         """Never silently defaulted — a defaulted threshold is exactly the
         arbitrary number this project avoids."""
         frame = _stable_frame(rng)
-        results = drift.detect_data_drift(frame, frame.copy(), {"race": 0.1})
-        assert {r.feature for r in results} == {"race"}
+        results = drift.detect_data_drift(frame, frame.copy(), {"grade": 0.1})
+        assert {r.feature for r in results} == {"grade"}
 
     def test_each_feature_is_judged_against_its_own_threshold(
         self, rng: np.random.Generator
     ) -> None:
         reference = _stable_frame(rng)
         current = reference.copy()
-        current["number_inpatient"] = current["number_inpatient"] + 3
+        current["dti"] = current["dti"] + 10
 
-        strict = drift.detect_data_drift(reference, current, {"number_inpatient": 0.01})
-        lenient = drift.detect_data_drift(reference, current, {"number_inpatient": 10.0})
+        strict = drift.detect_data_drift(reference, current, {"dti": 0.01})
+        lenient = drift.detect_data_drift(reference, current, {"dti": 10.0})
         assert strict[0].breaching
         assert not lenient[0].breaching
 
@@ -300,10 +307,10 @@ class TestInducedDriftIsLabelled:
         n = 3000
         return pd.DataFrame(
             {
-                "encounter_id": np.arange(n),
-                "age": rng.choice(["[50-60)", "[60-70)", "[70-80)", "[80-90)"], n),
-                "number_inpatient": rng.integers(0, 4, n),
-                "medical_specialty": rng.choice(["A", "B", "C"], n),
+                "issue_d": pd.date_range("2013-01-01", periods=n, freq="h"),
+                "grade": rng.choice(list("ABCDEFG"), n),
+                "dti": rng.uniform(0, 40, n),
+                "purpose": rng.choice(["debt_consolidation", "credit_card", "home_improvement"], n),
             }
         )
 
@@ -315,17 +322,17 @@ class TestInducedDriftIsLabelled:
 
     def test_manipulated_windows_are_marked_induced(self, frame: pd.DataFrame) -> None:
         windows = replay.induced_windows(
-            frame, inducer="age", window_rows=1000, clean_windows=1, drifted_windows=2
+            frame, inducer="grade", window_rows=1000, clean_windows=1, drifted_windows=2
         )
         assert windows[0].drift_origin == "real"
         assert all(w.drift_origin == "induced" for w in windows[1:])
 
     def test_every_manipulation_records_what_it_changed(self, frame: pd.DataFrame) -> None:
         windows = replay.induced_windows(
-            frame, inducer="age", window_rows=1000, clean_windows=1, drifted_windows=1
+            frame, inducer="grade", window_rows=1000, clean_windows=1, drifted_windows=1
         )
         manipulation = windows[-1].manipulations[0]
-        assert manipulation.feature == "age"
+        assert manipulation.feature == "grade"
         assert manipulation.detail
         assert manipulation.before
         assert manipulation.after
@@ -333,7 +340,7 @@ class TestInducedDriftIsLabelled:
 
     def test_the_report_leads_with_drift_origin(self) -> None:
         """Nobody should be able to read the artefact without seeing it."""
-        result = replay.ReplayResult(drift_origin="induced", inducer="age")
+        result = replay.ReplayResult(drift_origin="induced", inducer="grade")
         payload = result.to_dict()
         keys = list(payload)
         assert keys.index("drift_origin") < keys.index("windows")
@@ -349,9 +356,9 @@ class TestInducedDriftIsLabelled:
         for name, inducer in replay.INDUCERS.items():
             shifted, _ = inducer(window)
             feature = {
-                "age": "age",
-                "utilisation": "number_inpatient",
-                "specialty": "medical_specialty",
+                "grade": "grade",
+                "leverage": "dti",
+                "purpose": "purpose",
             }[name]
             psi = null_calibration.population_stability_index(window[feature], shifted[feature])
             assert psi > 0.1, f"inducer {name!r} barely moved {feature} (PSI {psi:.4f})"

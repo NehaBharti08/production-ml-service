@@ -163,11 +163,24 @@ class TestErrorContract:
         bad = {**EXAMPLE_FEATURES, "not_a_feature": 1}
         assert client.post("/v1/predict", json={"features": bad}).status_code == 422
 
-    def test_age_as_a_bare_number_is_rejected_with_a_useful_message(self, client: Any) -> None:
-        bad = {**EXAMPLE_FEATURES, "age": "75"}
+    def test_an_invalid_grade_is_rejected_with_a_useful_message(self, client: Any) -> None:
+        """The error must name the field and the constraint, not just fail."""
+        bad = {**EXAMPLE_FEATURES, "grade": "Z"}
         r = client.post("/v1/predict", json={"features": bad})
         assert r.status_code == 422
-        assert "band" in str(r.json()["errors"]).lower()
+        assert "grade" in str(r.json()["errors"]).lower()
+
+    def test_a_bare_term_is_normalised_rather_than_rejected(self, client: Any) -> None:
+        """The raw data stores ' 36 months' WITH a leading space.
+
+        A caller sending '36 months' would otherwise fall into the
+        unknown-category bucket and receive a plausible-looking score computed
+        from a discarded feature — the quietest way to be wrong. Normalising is
+        friendlier than rejecting, so this must succeed.
+        """
+        payload = {**EXAMPLE_FEATURES, "term": "36 months"}
+        r = client.post("/v1/predict", json={"features": payload})
+        assert r.status_code in (200, 503), r.text
 
     def test_errors_use_the_problem_content_type(self, client: Any) -> None:
         r = client.post("/v1/predict", json={"features": {**EXAMPLE_FEATURES, "age": "75"}})

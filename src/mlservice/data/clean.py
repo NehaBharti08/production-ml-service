@@ -29,6 +29,7 @@ from typing import Any
 import pandas as pd
 
 from mlservice.config import get_settings
+from mlservice.data import schema
 from mlservice.logging_ import get_logger
 
 log = get_logger(__name__)
@@ -70,6 +71,35 @@ def parse_term_months(df: pd.DataFrame) -> pd.Series:
         df["term"].astype("string").str.strip().str.replace(" months", "", regex=False),
         errors="coerce",
     )
+
+
+def drop_non_loan_rows(df: pd.DataFrame, report: CleaningReport) -> pd.DataFrame:
+    """Remove footer rows that are not loans at all.
+
+    The CSV ends with 33 summary lines — text like
+    ``"Total amount funded in policy code 1: 6417608175"`` sitting in the
+    ``id`` column, with every other field empty. They are an artefact of how
+    the file was exported, not records.
+
+    They would be removed incidentally anyway, because their ``loan_status``
+    is null and the label filter drops them. Removing them *explicitly* is the
+    point: a row that is not a loan should be excluded by a rule that says so,
+    and counted, rather than disappearing into a filter that exists for an
+    unrelated reason. Otherwise the raw row count is quietly wrong and nobody
+    can tell why.
+    """
+    usable = df[schema.TIME_COLUMN].notna()
+    dropped = int((~usable).sum())
+    out = df.loc[usable].copy()
+
+    report.record(
+        "drop_non_loan_rows",
+        reason="export footer lines, not records — no issue date, no status",
+        rows_dropped=dropped,
+        example=(str(df.loc[~usable, "id"].dropna().iloc[0])[:80] if dropped else None),
+        rows_after=len(out),
+    )
+    return out
 
 
 def resolve_label(df: pd.DataFrame, report: CleaningReport) -> pd.DataFrame:
@@ -333,7 +363,8 @@ def clean(df: pd.DataFrame) -> tuple[pd.DataFrame, CleaningReport]:
     """
     report = CleaningReport(rows_in=len(df))
 
-    out = resolve_label(df, report)
+    out = drop_non_loan_rows(df, report)
+    out = resolve_label(out, report)
     out = drop_immature_loans(out, report)
     out = drop_target_source(out, report)
     out = drop_leaking_columns(out, report)
@@ -363,6 +394,7 @@ __all__ = [
     "drop_identifier_columns",
     "drop_immature_loans",
     "drop_leaking_columns",
+    "drop_non_loan_rows",
     "drop_sparse_columns",
     "drop_target_source",
     "parse_issue_date",
