@@ -181,7 +181,10 @@ def calibrate(
     floor = floor if floor is not None else config["floor"]
     ceiling = ceiling if ceiling is not None else config["ceiling"]
 
-    ordered = reference.sort_values(schema.ENCOUNTER_ID).reset_index(drop=True)
+    # Ordered by issue date: the empirical null is the PSI between CONSECUTIVE
+    # stable windows, so "consecutive" has to mean consecutive in time. Sorting
+    # by anything else would measure churn between arbitrary groups.
+    ordered = reference.sort_values(schema.TIME_COLUMN).reset_index(drop=True)
     window_rows = len(ordered) // n_windows
     if window_rows < 100:
         raise ValueError(

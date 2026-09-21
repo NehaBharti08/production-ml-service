@@ -90,12 +90,13 @@ def chronological_windows(
     """Split a frame into consecutive windows in ``encounter_id`` order.
 
     No manipulation. Any drift detected across these is **real** — it is the
-    dataset's own change over 1999–2008.
+    dataset's own change over 2007–2015, across which Lending Club's book grew
+    by three orders of magnitude and its credit policy changed repeatedly.
     """
     config = get_thresholds().model_dump()["drift"]["alert"]["data_drift"]
     size = window_rows or config["window_size_rows"]
 
-    ordered = frame.sort_values(schema.ENCOUNTER_ID).reset_index(drop=True)
+    ordered = frame.sort_values(schema.TIME_COLUMN).reset_index(drop=True)
     windows: list[ReplayWindow] = []
     for i in range(0, len(ordered) - size + 1, size):
         chunk = ordered.iloc[i : i + size].copy()
@@ -224,7 +225,7 @@ def induced_windows(
 
     config = get_thresholds().model_dump()["drift"]["alert"]["data_drift"]
     size = window_rows or config["window_size_rows"]
-    ordered = frame.sort_values(schema.ENCOUNTER_ID).reset_index(drop=True)
+    ordered = frame.sort_values(schema.TIME_COLUMN).reset_index(drop=True)
 
     windows: list[ReplayWindow] = []
     total = clean_windows + drifted_windows

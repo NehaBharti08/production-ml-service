@@ -300,12 +300,14 @@ def analyse_window(
         )
 
     report = DriftReport(
-        window_start=str(current[schema.ENCOUNTER_ID].min())
-        if schema.ENCOUNTER_ID in current.columns
-        else "",
-        window_end=str(current[schema.ENCOUNTER_ID].max())
-        if schema.ENCOUNTER_ID in current.columns
-        else "",
+        # Real dates now, not an ID proxy — so a drift report says WHEN the
+        # window was rather than merely where it sat in an ordering.
+        window_start=(
+            str(current[schema.TIME_COLUMN].min()) if schema.TIME_COLUMN in current.columns else ""
+        ),
+        window_end=(
+            str(current[schema.TIME_COLUMN].max()) if schema.TIME_COLUMN in current.columns else ""
+        ),
         window_rows=len(current),
         reference_rows=len(reference),
         feature_schema_hash=cur_hash,

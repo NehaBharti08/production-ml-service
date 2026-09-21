@@ -337,9 +337,9 @@ class ModelStore:
         that needs real data cannot run in a fresh container, and this must work
         before any traffic arrives.
         """
-        from mlservice.api.schemas import EXAMPLE_FEATURES, PatientFeatures
+        from mlservice.api.schemas import EXAMPLE_FEATURES, LoanApplication
 
-        probability = model.predict_proba(PatientFeatures(**EXAMPLE_FEATURES).to_model_row())
+        probability = model.predict_proba(LoanApplication(**EXAMPLE_FEATURES).to_model_row())
         if not 0.0 <= probability <= 1.0:
             raise ValueError(f"canary inference returned {probability}, expected a probability")
         log.info("canary_inference_ok", probability=round(probability, 6))
