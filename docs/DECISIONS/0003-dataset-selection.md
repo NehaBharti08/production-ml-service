@@ -51,8 +51,8 @@ them reaches ROC-AUC **0.9983** against an honest ceiling near 0.70, and
 `recoveries > 0` labels a default in **100.00%** of 80,312 cases. A dataset whose
 leaks are obvious teaches nothing; this one's are subtle.
 
-**Its right-censoring is large and easy to explain.** 38.9% of loans are still
-in flight. The resolved fraction collapses from 100% for 2007–2013 to 11.4% for
+**Its right-censoring is large and easy to explain.** 40.4% of loans are
+unresolved — 38.9% still Current, the rest late or in grace. The resolved fraction collapses from 100% for 2007–2013 to 11.4% for
 2018 — and the 2018 default rate *falls*, which is survivorship among fast
 resolvers rather than better lending. Handling it correctly moves the positive
 rate from 0.1998 to 0.1481.
