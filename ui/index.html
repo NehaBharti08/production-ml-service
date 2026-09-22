@@ -3,131 +3,121 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Readmission Risk — Engineering Demo</title>
+  <title>Credit Default Risk — Engineering Demo</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
 <!--
   The disclaimer is the first element in the document, is not dismissible, and
-  is not collapsed behind a toggle. This is a health-adjacent model and the UI
-  is the surface most likely to be screenshotted out of context.
+  is not collapsed behind a toggle. A risk score is the kind of output that gets
+  screenshotted out of context and acted on, so the warning travels with it.
 -->
 <div class="disclaimer" role="alert">
-  <strong>⚠ NOT FOR CLINICAL USE.</strong>
+  <strong>⚠ NOT A CREDIT DECISIONING SYSTEM.</strong>
   This is an engineering demonstration of ML operations, trained on a public
-  1999–2008 research dataset. It is not a medical device, has never been
-  clinically validated, and must never inform patient care.
+  2007–2015 dataset from a single lender. It has not been validated for
+  lending, has had no fair-lending review, and must never be used to decide
+  anyone's access to credit.
 </div>
 
 <main>
   <header>
-    <h1>Hospital Readmission Risk</h1>
+    <h1>Credit Default Risk</h1>
     <p class="sub">
-      Predicts 30-day readmission probability. The model is deliberately
-      simple — a calibrated logistic regression — because this project exists to
-      demonstrate <em>operating</em> a model, not building a complex one.
+      Predicts the probability that a loan charges off. The model is
+      deliberately simple — a calibrated logistic regression — because this
+      project exists to demonstrate <em>operating</em> a model, not building a
+      complex one.
     </p>
     <div id="model-info" class="model-info">Loading model info…</div>
   </header>
 
   <section>
-    <h2>Score an encounter</h2>
+    <h2>Score a loan application</h2>
     <p class="hint">
-      Pre-filled with a plausible example. Change any field and submit.
+      Pre-filled with a plausible application. Only the fields a lender
+      always has are shown; the optional credit-bureau tail is omitted, and the
+      model imputes it <em>and records that it was missing</em>.
     </p>
 
     <form id="predict-form">
       <div class="grid">
-        <label>Age band
-          <select name="age">
-            <option>[0-10)</option><option>[10-20)</option><option>[20-30)</option>
-            <option>[30-40)</option><option>[40-50)</option><option>[50-60)</option>
-            <option>[60-70)</option><option selected>[70-80)</option>
-            <option>[80-90)</option><option>[90-100)</option>
+        <label>Loan amount
+          <input type="number" name="loan_amnt" value="10000" min="500" max="100000" step="100">
+        </label>
+
+        <label>Term
+          <select name="term">
+            <option value=" 36 months" selected>36 months</option>
+            <option value=" 60 months">60 months</option>
           </select>
         </label>
 
-        <label>Race
-          <select name="race">
-            <option selected>Caucasian</option><option>AfricanAmerican</option>
-            <option>Hispanic</option><option>Asian</option>
-            <option>Other</option><option>Unknown</option>
+        <label>Interest rate (%)
+          <input type="number" name="int_rate" value="11.99" min="1" max="40" step="0.01">
+        </label>
+
+        <label>Monthly instalment
+          <input type="number" name="installment" value="332.1" min="1" max="5000" step="0.01">
+        </label>
+
+        <label>Grade
+          <select name="grade">
+            <option>A</option><option selected>B</option><option>C</option>
+            <option>D</option><option>E</option><option>F</option><option>G</option>
           </select>
         </label>
 
-        <label>Gender
-          <select name="gender">
-            <option selected>Female</option><option>Male</option>
+        <label>Sub-grade
+          <input type="text" name="sub_grade" value="B3" maxlength="2">
+        </label>
+
+        <label>Purpose
+          <select name="purpose">
+            <option selected>debt_consolidation</option><option>credit_card</option>
+            <option>home_improvement</option><option>major_purchase</option>
+            <option>small_business</option><option>car</option><option>medical</option>
+            <option>other</option>
           </select>
         </label>
 
-        <label>Days in hospital
-          <input type="number" name="time_in_hospital" value="5" min="1" max="14">
+        <label>Annual income
+          <input type="number" name="annual_inc" value="65000" min="0" step="1000">
         </label>
 
-        <label>Prior inpatient admissions
-          <input type="number" name="number_inpatient" value="1" min="0" max="100">
-        </label>
-
-        <label>Prior emergency visits
-          <input type="number" name="number_emergency" value="0" min="0" max="100">
-        </label>
-
-        <label>Prior outpatient visits
-          <input type="number" name="number_outpatient" value="0" min="0" max="100">
-        </label>
-
-        <label>Lab procedures
-          <input type="number" name="num_lab_procedures" value="41" min="0" max="200">
-        </label>
-
-        <label>Procedures
-          <input type="number" name="num_procedures" value="0" min="0" max="20">
-        </label>
-
-        <label>Medications
-          <input type="number" name="num_medications" value="15" min="0" max="100">
-        </label>
-
-        <label>Diagnoses recorded
-          <input type="number" name="number_diagnoses" value="9" min="1" max="20">
-        </label>
-
-        <label>Primary diagnosis
-          <select name="diag_1">
-            <option selected>Circulatory</option><option>Diabetes</option>
-            <option>Respiratory</option><option>Digestive</option>
-            <option>Injury</option><option>Musculoskeletal</option>
-            <option>Genitourinary</option><option>Neoplasms</option>
-            <option>Other</option><option>Unknown</option>
+        <label>Employment length
+          <select name="emp_length">
+            <option>&lt; 1 year</option><option>1 year</option><option>2 years</option>
+            <option>3 years</option><option>4 years</option><option selected>5 years</option>
+            <option>6 years</option><option>7 years</option><option>8 years</option>
+            <option>9 years</option><option>10+ years</option>
           </select>
         </label>
 
-        <label>HbA1c result
-          <select name="A1Cresult">
-            <option selected>NotMeasured</option><option>Norm</option>
-            <option>&gt;7</option><option>&gt;8</option>
+        <label>Home ownership
+          <select name="home_ownership">
+            <option selected>MORTGAGE</option><option>RENT</option><option>OWN</option>
           </select>
         </label>
 
-        <label>Insulin
-          <select name="insulin">
-            <option>No</option><option>Steady</option>
-            <option selected>Up</option><option>Down</option>
+        <label>Income verification
+          <select name="verification_status">
+            <option selected>Verified</option><option>Source Verified</option>
+            <option>Not Verified</option>
           </select>
         </label>
 
-        <label>Medication changed
-          <select name="change">
-            <option selected>Ch</option><option>No</option>
-          </select>
+        <label>State
+          <input type="text" name="addr_state" value="CA" maxlength="2">
         </label>
 
-        <label>On diabetes medication
-          <select name="diabetesMed">
-            <option selected>Yes</option><option>No</option>
-          </select>
+        <label>Debt-to-income (%)
+          <input type="number" name="dti" value="18.4" min="0" max="100" step="0.1">
+        </label>
+
+        <label>FICO (lower bound)
+          <input type="number" name="fico_range_low" value="700" min="300" max="900">
         </label>
       </div>
 
@@ -160,14 +150,11 @@
 // a bundler would add a toolchain to maintain for no benefit here.
 
 const DEFAULTS = {
-  admission_type_id: 1,
-  discharge_disposition_id: 1,
-  admission_source_id: 7,
-  medical_specialty: "InternalMedicine",
-  diag_2: "Diabetes",
-  diag_3: "Circulatory",
-  max_glu_serum: "NotMeasured",
-  metformin: "No",
+  // Fields a lender always has but that are not worth a form control here.
+  // The optional credit-bureau tail is deliberately absent: the API treats
+  // omission as missing-and-flagged rather than inventing a value.
+  initial_list_status: "w",
+  application_type: "Individual",
 };
 
 async function loadModelInfo() {
@@ -231,14 +218,14 @@ document.getElementById("predict-form").addEventListener("submit", async (event)
       return;
     }
 
-    const pct = (d.readmission_probability * 100).toFixed(1);
+    const pct = (d.default_probability * 100).toFixed(1);
     out.innerHTML = `
       <div class="score ${d.flagged ? "flagged" : "not-flagged"}">
         <div class="pct">${pct}%</div>
         <div class="label">${d.flagged ? "Above decision threshold" : "Below decision threshold"}</div>
       </div>
       <table>
-        <tr><th>Probability</th><td>${d.readmission_probability.toFixed(6)}</td></tr>
+        <tr><th>Probability</th><td>${d.default_probability.toFixed(6)}</td></tr>
         <tr><th>Threshold</th><td>${d.decision_threshold.toFixed(6)}</td></tr>
         <tr><th>Model version</th><td><code>${d.model.version}</code></td></tr>
         <tr><th>Model source</th><td><code>${d.model.source}</code></td></tr>
@@ -247,9 +234,10 @@ document.getElementById("predict-form").addEventListener("submit", async (event)
       </table>
       <p class="small">
         <strong>Interpretation, honestly:</strong> at this threshold the model
-        flags roughly a third of patients and about 89% of those flags do not
-        result in a 30-day readmission. A "flagged" result is not a prediction
-        that this patient will be readmitted.
+        flags roughly a quarter of loans, and about 73% of those flagged loans
+        are repaid in full. A "flagged" result is not a prediction that this
+        borrower will default — and this model has had no fair-lending review,
+        so it must not be used to decide anything about a real applicant.
       </p>
       <p class="small">${d.disclaimer}</p>
     `;
