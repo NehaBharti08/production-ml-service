@@ -161,3 +161,69 @@ class TestRegistryWritesTheSidecar:
 
         env(MLSERVICE_PATHS__REPORTS=str(tmp_path / "empty"))
         assert registry.write_artifact_metadata(tmp_path / "champion") is None
+
+
+class TestTheContractComesFromThisRun:
+    """Regression tests for a bug with a long fuse.
+
+    ``save_local_fallback`` used to write the artifact's contract by *reading*
+    ``reports/training_summary.json`` — but it runs before the summary for the
+    current run is written, so it stamped every artifact with the PREVIOUS
+    run's threshold.
+
+    Every retrain would have shipped a model carrying its predecessor's
+    operating point, silently. It only became visible when the domain changed
+    and the stale values were obviously from another problem (0.1011 against a
+    model tuned to 0.207). Had the domains matched, the numbers would merely
+    have been slightly wrong — and invisible.
+    """
+
+    def test_the_passed_contract_wins_over_any_file(self, tmp_path: Path, env: Any) -> None:
+        from mlservice.models import registry
+
+        reports = tmp_path / "reports"
+        reports.mkdir()
+        # A stale summary from a previous, different run.
+        (reports / "training_summary.json").write_text(
+            json.dumps(
+                {"champion": "old", "champion_threshold": 0.9999, "feature_schema_hash": "stale"}
+            ),
+            encoding="utf-8",
+        )
+        env(MLSERVICE_PATHS__REPORTS=str(reports))
+
+        out = registry.write_artifact_metadata(
+            tmp_path / "champion",
+            contract={
+                "champion": "new",
+                "champion_threshold": TRAINED_THRESHOLD,
+                "feature_schema_hash": SCHEMA_HASH,
+            },
+        )
+        assert out is not None
+        written = json.loads(out.read_text(encoding="utf-8"))
+        assert written["champion_threshold"] == pytest.approx(TRAINED_THRESHOLD)
+        assert written["feature_schema_hash"] == SCHEMA_HASH
+        assert written["champion"] == "new"
+
+    def test_the_shipped_artifact_matches_the_shipped_summary(self) -> None:
+        """The end-to-end invariant, checked against the real files.
+
+        If these two ever disagree, the deployed model is being served with
+        another run's operating point — which is the failure this project has
+        now hit six times in six different places.
+        """
+        root = Path(__file__).resolve().parents[2]
+        meta_path = root / "models" / "champion" / "metadata.json"
+        summary_path = root / "reports" / "training_summary.json"
+        if not (meta_path.is_file() and summary_path.is_file()):
+            pytest.skip("no trained artifact — run `uv run mlservice train run`")
+
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+
+        assert meta["champion_threshold"] == pytest.approx(summary["champion_threshold"]), (
+            "the artifact's threshold does not match the training summary — "
+            "the artifact was stamped from a different run"
+        )
+        assert meta["feature_schema_hash"] == summary["feature_schema_hash"]

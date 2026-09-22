@@ -1,5 +1,11 @@
 # Render Blueprint — the free-tier live endpoint.
 #
+# NOTE ON RENAMING: Render treats the service name as identity, so changing
+# it creates a NEW service at a new URL rather than renaming the old one.
+# That is deliberate here — the previous service served a different model on
+# a different schema, and pointing this code at it would have produced a
+# feature-contract mismatch on every request.
+#
 # Render rather than a Hugging Face Space: HF began requiring a PRO
 # subscription for Docker Spaces, verified 2026-09-04 by a 402 straight from
 # their API —
@@ -21,7 +27,7 @@
 #   * no credit card required.
 services:
   - type: web
-    name: readmission-risk-service
+    name: credit-default-risk-service
     runtime: docker
     plan: free
     region: oregon
@@ -41,7 +47,7 @@ services:
       # that way; the service downloads it at boot, which is the same
       # artifact-store/runtime split the MLflow path uses.
       - key: HF_MODEL_REPO
-        value: nehabharti0802/readmission-risk-model
+        value: nehabharti0802/credit-default-risk-model
       - key: HF_MODEL_FILE
         value: model.joblib
 

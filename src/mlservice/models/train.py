@@ -318,7 +318,18 @@ def run_training(register_model: bool = True) -> dict[str, Any]:
         title=f"Reliability — {champion.name} on the held-out test split",
     )
 
-    fallback = registry.save_local_fallback(champion_model)
+    # The contract is handed over explicitly. Reading it from
+    # reports/training_summary.json here would read the PREVIOUS run's file,
+    # because this run's summary is not written until the end of this function.
+    fallback = registry.save_local_fallback(
+        champion_model,
+        contract={
+            "champion": champion.name,
+            "champion_threshold": champion.threshold,
+            "feature_schema_hash": schema_hash,
+            "calibration_method": champion.calibration_method,
+        },
+    )
 
     version = None
     if register_model:

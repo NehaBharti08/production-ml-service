@@ -22,11 +22,11 @@ on:
       model_repo:
         description: "Model repo name (without the owner)"
         type: string
-        default: readmission-risk-model
+        default: credit-default-risk-model
       space_repo:
         description: "Space name (without the owner)"
         type: string
-        default: readmission-risk-service
+        default: credit-default-risk-service
       private:
         description: "Create both as private"
         type: boolean
@@ -133,7 +133,7 @@ jobs:
       - name: The artifact must carry its own contract
         # metadata.json holds the decision threshold and feature schema hash.
         # Without it the Space serves the 0.5 config placeholder against a model
-        # tuned to 0.1011 — flagging nobody while reporting itself healthy. That
+        # tuned to 0.207 — flagging nobody while reporting itself healthy. That
         # bug is the reason this check is a gate and not a comment.
         run: |
           set -euo pipefail
@@ -153,6 +153,22 @@ jobs:
               sys.exit("::error::metadata.json has no champion_threshold")
           if threshold == 0.5:
               sys.exit("::error::threshold is the 0.5 placeholder, not a trained value")
+
+          # Checking "not 0.5" is not enough, and this gate proved it by waving
+          # through an artifact stamped with the PREVIOUS run's threshold
+          # (0.1011 against a model tuned to 0.207). A stale value is not a
+          # placeholder, so the placeholder check cannot see it. Compare against
+          # the summary this training run actually produced.
+          summary = json.loads(Path("reports/training_summary.json").read_text(encoding="utf-8"))
+          if threshold != summary["champion_threshold"]:
+              sys.exit(
+                  f"::error::artifact threshold {threshold} does not match this run's "
+                  f"summary {summary['champion_threshold']} — the artifact was stamped "
+                  "from a different training run"
+              )
+          if payload.get("feature_schema_hash") != summary["feature_schema_hash"]:
+              sys.exit("::error::artifact schema hash does not match this run's summary")
+
           print(f"threshold {threshold}, schema {payload.get('feature_schema_hash')}")
           PY
 
@@ -183,15 +199,15 @@ jobs:
           # exactly the kind of thing this project argues against.
           card = """---
           license: mit
-          tags: [tabular-classification, healthcare, not-for-clinical-use]
+          tags: [tabular-classification, credit-risk, not-for-lending-use]
           ---
 
-          # Readmission risk — serving artifact
+          # Credit default risk — serving artifact
 
-          > **NOT FOR CLINICAL USE.** An engineering demonstration of ML
-          > operations, trained on the public Diabetes 130-US Hospitals dataset
-          > (1999-2008). Never clinically validated, not a medical device, and
-          > must never inform patient care.
+          > **NOT A CREDIT DECISIONING SYSTEM.** An engineering demonstration
+          > of ML operations, trained on a public 2007-2015 dataset from a
+          > single lender. Never validated for lending, no fair-lending review,
+          > and must never decide anyone's access to credit.
 
           Calibrated logistic regression. `metadata.json` carries the decision
           threshold and feature schema hash — the serving contract travels with
