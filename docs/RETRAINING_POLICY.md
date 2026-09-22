@@ -295,7 +295,7 @@ Stated plainly rather than left for a reader to discover:
 - **`kubectl rollout undo` has not been demonstrated.** Same reason. The *registry* half
   of rollback — the model-level lever — is genuinely verified above.
 - **The scheduled trigger runs on a simulated clock.** The dataset spans 1999–2008 and
-  has no timestamp column (see [ADR 0004](DECISIONS/0004-temporal-split-proxy.md)); the
+  has no timestamp column (see [ADR 0004](DECISIONS/0004-chronological-split.md)); the
   30-day cadence is evaluated against registry creation timestamps.
 - **No retraining has been triggered end-to-end by drift in a live system.** The trigger
   fires correctly against real replay evidence — `retrain check` reports

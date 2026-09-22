@@ -83,7 +83,7 @@ hand. Four findings changed the pipeline:
   **7.7× discontinuity at the 80th percentile** — the 2007 Avandia safety
   collapse. The ordering reproduces a *dated real-world event*, which is far
   stronger evidence than a trend test. See
-  [ADR 0004](docs/DECISIONS/0004-temporal-split-proxy.md).
+  [ADR 0004](docs/DECISIONS/0004-chronological-split.md).
 - **Right-censoring at the tail.** A first encounter can only be labelled
   positive if a later encounter exists in the data. The positive rate collapses
   56% in the final 5% of the ordering — labels are *missing, not negative*. A

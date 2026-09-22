@@ -1,81 +1,123 @@
-# ADR 0003 — Dataset selection: Diabetes 130-US Hospitals
+# ADR 0003 — Dataset selection: Lending Club accepted loans
 
 - **Status:** Accepted
-- **Date:** 2026-08-10
+- **Date:** 2026-09-11
 - **Phase:** 1
 
 ## Context
 
 The project needs a dataset that can carry a genuine MLOps demonstration:
-monitoring, drift detection, subgroup analysis, and retraining. That imposes
-requirements most portfolio datasets fail.
+monitoring, drift detection, subgroup analysis, calibration-gated retraining.
+That imposes requirements most portfolio datasets fail.
 
-The widely-circulated symptom-to-disease datasets on Kaggle are **synthetically
-generated and trivially separable** — a decision tree reaches near-100% accuracy
-on them. Reporting that number signals inexperience to any reviewer who knows
-the data. More importantly, a dataset with no irreducible error has nothing to
-monitor: there is no degradation to detect and no drift worth acting on.
+It has to be **real and messy** rather than synthetic, **imbalanced** so that
+accuracy is visibly the wrong metric, **modestly predictable** so the project
+is about operating a model rather than tuning one, **time-ordered** so drift has
+something to stand on, and it needs **slices worth reporting** for subgroup
+analysis.
+
+One requirement matters more than the others, and it is the one that decided
+this: **someone downstream has to act on the probability itself, not merely the
+ranking.** The project's central control is a promotion gate that blocks a
+challenger which ranks *better* but calibrates *worse*. That argument only has
+force where the number is used as a number.
 
 ## Decision
 
-Use **Diabetes 130-US Hospitals** (UCI #296): 101,766 real inpatient encounters
-across 130 US hospitals, 1999–2008.
+Lending Club's accepted-loan book: **2,260,701 loans issued 2007-06 to
+2018-12**, reduced to **672,379 loans, 2007-06 to 2015-12**, after the label is
+resolved and immature loans are removed. Target: charged off or defaulted,
+**14.8%** positive.
+
+The bytes come from a community mirror on the Hugging Face hub, pinned by
+SHA256 — Lending Club withdrew the official download.
 
 ## Reasoning
 
-**It is real and messy.** Missingness is structural rather than sprinkled:
-`weight` 96.9%, `medical_specialty` 49.1%, `payer_code` 39.6%. Two columns
-(`examide`, `citoglipton`) are constant across all 101,766 rows. Missing values
-are encoded as a literal `?`, so naive null-counting reports zero missingness
-and is wrong — the dataset punishes carelessness, which is the point.
+**Calibration is how credit is priced.** Expected loss is probability of default
+× exposure × loss given default, so a miscalibrated probability is a mispriced
+loan. The calibration gate stops being an ethical nicety and becomes the thing
+that protects the business. This is the single strongest reason for the choice.
 
-**It is genuinely hard.** An unconstrained decision tree reaches **0.519 test
-ROC-AUC** — barely above chance — while memorising the training set. The
-published literature ceiling is ROC-AUC 0.65–0.68. That ceiling is a *feature*:
-a model that cannot be made excellent must be carefully operated, which is this
-project's thesis.
+**It has a real date.** `issue_d` is a date column. The split is chronological
+by construction, and drift across 2007–2015 is real: the book grew by three
+orders of magnitude and the credit policy changed repeatedly inside the window.
+See [ADR 0004](0004-chronological-split.md).
 
-**It contains a real leakage trap.** `discharge_disposition_id` encodes expired
-discharges, and those 1,652 encounters contain exactly **zero** positive labels.
-A model would learn `died → not readmitted` from the discharge code. Finding and
-removing this is a stronger demonstration of judgement than any accuracy number.
+**Its leakage is the kind practitioners actually fall into.** Thirty-one columns
+are knowable only after the loan has run — `recoveries`, `total_rec_prncp`,
+`last_fico_range_high`. They look like ordinary loan attributes. Training on
+them reaches ROC-AUC **0.9983** against an honest ceiling near 0.70, and
+`recoveries > 0` labels a default in **100.00%** of 80,312 cases. A dataset whose
+leaks are obvious teaches nothing; this one's are subtle.
 
-**It has authentic time structure.** Verified, not assumed — see
-[ADR 0004](0004-temporal-split-proxy.md). Practice genuinely shifts across the
-decade, which makes drift monitoring real rather than staged.
+**Its right-censoring is large and easy to explain.** 38.9% of loans are still
+in flight. The resolved fraction collapses from 100% for 2007–2013 to 11.4% for
+2018 — and the 2018 default rate *falls*, which is survivorship among fast
+resolvers rather than better lending. Handling it correctly moves the positive
+rate from 0.1998 to 0.1481.
 
-**Fairness dimensions are analysable.** `race`, `gender` and `age` all have
-subgroups above n=500, so Phase 2's subgroup breakdown can say something
-statistically meaningful rather than decorative.
+**Fair-lending analysis is a real discipline with real proxies.** US credit data
+legally excludes race, gender and marital status, so disparate-impact analysis
+uses geography and socioeconomic position instead — which is what compliance
+teams actually do. Subgroups: `addr_state`, `emp_length`, `home_ownership`,
+income band. 59 of 69 groups are large enough to analyse.
+
+**The ceiling is modest.** ROC-AUC near 0.70, close to the published range for
+this task. A model that cannot be perfected has to be operated.
 
 ## Options rejected
 
-**UCI Heart Disease (303 rows).** Too small for drift monitoring, subgroup
-analysis, or load testing. Retained only as a smoke-test fixture.
+**UCI "Default of Credit Card Clients" (Taiwan, #350).** Checked first, because
+it has *richer* demographics — sex, education, marital status, age — and downloads
+directly. Rejected for one decisive reason: **it has no date column at all.**
+Every row covers the same six months, so a chronological split is impossible,
+real drift has nothing to stand on, and right-censoring does not exist to find.
+Better protected attributes do not compensate for losing the time axis the
+monitoring layer is built around.
 
-**MIMIC-IV.** Has genuine timestamps, which would be strictly better than a
-proxy. Rejected on schedule: PhysioNet credentialing plus CITI training is a
-multi-week delay before any code could be written.
+**Home Credit Default Risk.** Relational, multi-table, and dated only in
+relative days. The joins would dominate the project.
 
-**Synthetic symptom-to-disease datasets.** Rejected on the grounds described
-above — they are the specific failure mode this project is meant to avoid.
+**Give Me Some Credit.** 150k rows, no dates, and clean enough to be
+uninteresting.
+
+**An ML-infrastructure dataset** — CI build failures, training-job failures.
+Considered because it would be thematically neat. Rejected because nobody acts
+on a build-failure probability as a number; they retune a threshold. The
+calibration gate would lose its reason to exist, and there are no protected
+attributes, so the fairness work would have gone too.
 
 ## Consequences
 
-**Headline metrics will be modest.** PR-AUC around 0.10–0.25 against a ~7.6%
-test prevalence floor. The README must frame this correctly and up front, or a
-casual reader will mistake an honest result for a weak one.
+**Good**
 
-**Accuracy is unusable as a headline.** The majority-class baseline scores
-92.4% accuracy with 0% recall. That number appears in the audit specifically to
-make the argument concrete.
+- The calibration gate has an economic rationale, not only an ethical one.
+- The chronological split needs no statistical argument that an ordering
+  carries time signal.
+- The leakage and censoring findings are both demonstrable with a number.
+- Fairness analysis maps onto how the discipline is practised.
 
-**The dataset is 1999–2008.** Clinical practice has moved on considerably. This
-is stated in the model card's limitations and is not a defect for an operations
-demonstration, but it would disqualify the model from any real use.
+**Costs and limits**
+
+- **Borrower identity is unavailable.** `member_id` is null for every row, so
+  repeat borrowers cannot be detected and may appear in both train and test.
+  Held-out metrics are inflated to whatever extent repeat borrowing occurs.
+  Deduplicating by borrower is the standard defence and it is simply not
+  available.
+- **The model inherits the lender's judgment.** `grade`, `sub_grade` and
+  `int_rate` are Lending Club's own risk output. See
+  [ADR 0009](0009-lender-grade-as-a-feature.md).
+- **Provenance rests on a mirror.** The checksum makes that acceptable — a
+  changed mirror fails loudly — but the original source is gone.
+- **1.6 GB raw.** Heavier than a portfolio dataset usually is; cleaning cuts it
+  to 42 MB of parquet.
 
 ## Revisit if
 
-Credentialed MIMIC-IV access becomes available and real timestamps would
-materially strengthen the drift work. The pipeline is written against a schema
-module, so the change would be contained rather than pervasive.
+- A dated dataset with protected attributes becomes available — it would
+  strengthen the fairness analysis without costing the time axis.
+- The mirror's checksum ever fails. Investigate before re-recording: every
+  number in the model card depends on these bytes.
+- Borrower identity becomes available, which would make deduplication possible
+  and remove the largest caveat on the held-out metrics.

@@ -65,7 +65,7 @@ Licensed CC BY 4.0. Attribution is carried in `docs/MODEL_CARD.md`.
 **There is no timestamp column.** Not a missing one — none exists. The only
 time signal is the ordering of `encounter_id`. Every "temporal" claim in this
 repo rests on that proxy, which Phase 1 tests empirically before relying on.
-See [`docs/DECISIONS/0004-temporal-split-proxy.md`](../docs/DECISIONS/0004-temporal-split-proxy.md).
+See [`docs/DECISIONS/0004-chronological-split.md`](../docs/DECISIONS/0004-chronological-split.md).
 
 **Some rows have a deterministic label.** `discharge_disposition_id` encodes
 expired and hospice discharges. A patient who died cannot be readmitted, so
