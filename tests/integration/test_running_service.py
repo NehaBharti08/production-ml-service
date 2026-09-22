@@ -84,8 +84,8 @@ class TestRealHttpBehaviour:
         assert response.status_code == 200
 
         body = response.json()
-        assert 0.0 <= body["readmission_probability"] <= 1.0
-        assert body["flagged"] == (body["readmission_probability"] >= body["decision_threshold"])
+        assert 0.0 <= body["default_probability"] <= 1.0
+        assert body["flagged"] == (body["default_probability"] >= body["decision_threshold"])
 
     def test_threshold_is_not_the_placeholder(self, http: Any) -> None:
         """Regression: the API once served config's 0.5 instead of the trained
@@ -154,7 +154,7 @@ class TestOutcomeLifecycle:
             "/v1/outcomes",
             json={
                 "prediction_id": prediction_id,
-                "readmitted_within_30_days": True,
+                "defaulted": True,
                 "source": "integration-test",
             },
         )

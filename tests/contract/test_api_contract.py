@@ -36,7 +36,7 @@ class _StubPipeline:
 def _stub_model(probability: float = 0.42, threshold: float = 0.1011) -> LoadedModel:
     return LoadedModel(
         pipeline=_StubPipeline(probability),
-        name="readmission-risk",
+        name="credit-default-risk",
         version="test-1",
         stage="champion",
         source="registry",
@@ -91,7 +91,7 @@ class TestPredictContract:
         for field in (
             "prediction_id",
             "request_id",
-            "readmission_probability",
+            "default_probability",
             "flagged",
             "decision_threshold",
             "model",
@@ -109,14 +109,14 @@ class TestPredictContract:
     def test_flagged_follows_the_threshold_not_a_hardcoded_half(self, client: Any) -> None:
         """0.42 against a 0.1011 threshold must flag — the Phase 3 bug."""
         body = client.post("/v1/predict", json={"features": EXAMPLE_FEATURES}).json()
-        assert body["readmission_probability"] == pytest.approx(0.42)
+        assert body["default_probability"] == pytest.approx(0.42)
         assert body["decision_threshold"] == pytest.approx(0.1011)
         assert body["flagged"] is True
 
     def test_every_response_carries_the_disclaimer(self, client: Any) -> None:
         """A JSON-only consumer must still be told this is not a clinical tool."""
         body = client.post("/v1/predict", json={"features": EXAMPLE_FEATURES}).json()
-        assert "NOT FOR CLINICAL USE" in body["disclaimer"].upper()
+        assert "NOT A CREDIT DECISIONING SYSTEM" in body["disclaimer"].upper()
 
     def test_prediction_ids_are_unique_across_calls(self, client: Any) -> None:
         ids = {
@@ -248,7 +248,7 @@ class TestOutcomeContract:
         ]
         r = client.post(
             "/v1/outcomes",
-            json={"prediction_id": pid, "readmitted_within_30_days": True, "source": "test"},
+            json={"prediction_id": pid, "defaulted": True, "source": "test"},
         )
         assert r.status_code == 200
         assert r.json()["recorded"] is True
@@ -259,7 +259,7 @@ class TestOutcomeContract:
         unmatched IDs, which is where a systematic mismatch should surface."""
         r = client.post(
             "/v1/outcomes",
-            json={"prediction_id": "never-seen-before", "readmitted_within_30_days": False},
+            json={"prediction_id": "never-seen-before", "defaulted": False},
         )
         assert r.status_code == 200
 
@@ -269,7 +269,7 @@ class TestMetaContract:
         body = client.get("/v1/model").json()
         assert body["loaded"] is True
         assert body["source"] == "registry"
-        assert "NOT FOR CLINICAL USE" in body["disclaimer"].upper()
+        assert "NOT A CREDIT DECISIONING SYSTEM" in body["disclaimer"].upper()
 
     def test_metrics_endpoint_serves_prometheus_text(self, client: Any) -> None:
         r = client.get("/metrics")

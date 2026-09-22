@@ -23,7 +23,7 @@ def _record(**overrides: object) -> prediction_log.PredictionRecord:
         "features_raw": {"age": "[70-80)", "number_inpatient": 1},
         "predicted_proba": 0.1234,
         "decision_threshold": 0.1011,
-        "model_name": "readmission-risk",
+        "model_name": "credit-default-risk",
         "model_version": "3",
         "model_stage": "champion",
         "model_source": "registry",

@@ -154,8 +154,34 @@ class LoggingSettings(_Section):
     format: Literal["json", "console"] = "json"
     #: Header carrying an inbound correlation ID. Honoured if present, minted if not.
     request_id_header: str = "X-Request-ID"
-    #: Never log these, at any level. Extended as the schema grows.
-    redact_fields: list[str] = Field(default_factory=lambda: ["patient_nbr", "encounter_id"])
+    #: Never written to application logs, at any level.
+    #:
+    #: This list protected ``patient_nbr`` and ``encounter_id`` until the domain
+    #: changed — at which point it was redacting fields that no longer existed
+    #: and protecting nothing, while raising no error. A privacy control that
+    #: fails silently is the worst kind, so it is restated here for what is
+    #: actually sensitive in credit data:
+    #:
+    #: - direct identifiers (``id``, ``member_id``)
+    #: - quasi-identifiers that re-identify in combination (``zip_code``,
+    #:   ``emp_title`` — a job title plus a state is often one person)
+    #: - financial facts about a named individual (``annual_inc``)
+    #: - free text that may contain any of the above (``desc``, ``title``)
+    #:
+    #: This governs APPLICATION logs only. The prediction log deliberately keeps
+    #: features, because drift detection is impossible without them; it is
+    #: access-controlled rather than redacted.
+    redact_fields: list[str] = Field(
+        default_factory=lambda: [
+            "id",
+            "member_id",
+            "zip_code",
+            "emp_title",
+            "annual_inc",
+            "desc",
+            "title",
+        ]
+    )
 
 
 class DataSettings(_Section):
@@ -242,7 +268,7 @@ class DataSettings(_Section):
 
 
 class ModelSettings(_Section):
-    name: str = "readmission-risk"
+    name: str = "credit-default-risk"
     #: Registry alias the API loads. Flipping this alias is the rollback lever.
     serving_alias: str = "champion"
     #: Alias a challenger occupies while it is being evaluated.
@@ -257,7 +283,7 @@ class ModelSettings(_Section):
 
 class MLflowSettings(_Section):
     tracking_uri: str = "http://localhost:5000"
-    experiment_name: str = "readmission-risk"
+    experiment_name: str = "credit-default-risk"
     registry_uri: str | None = None
 
     @model_validator(mode="after")
@@ -268,7 +294,7 @@ class MLflowSettings(_Section):
 
 
 class ApiSettings(_Section):
-    title: str = "Hospital Readmission Risk API"
+    title: str = "Credit Default Risk API"
     version: str = "v1"
     host: str = "0.0.0.0"
     port: int = Field(default=8000, ge=1, le=65535)
@@ -279,12 +305,14 @@ class ApiSettings(_Section):
     max_batch_size: int = Field(default=500, ge=1)
     cors_origins: list[str] = Field(default_factory=list)
     #: Surfaced verbatim in every prediction response, /v1/model, and the UI.
-    #: Non-optional by design: this is a health-adjacent service.
+    #: Non-optional by design: a credit score read out of context is the kind
+    #: of output that gets acted on.
     disclaimer: str = (
-        "NOT FOR CLINICAL USE. This is an engineering demonstration of ML "
-        "operations, trained on a public 1999-2008 research dataset. It has "
-        "not been clinically validated, is not a medical device, and must "
-        "never inform patient care."
+        "NOT A CREDIT DECISIONING SYSTEM. This is an engineering demonstration "
+        "of ML operations, trained on a public 2007-2015 research dataset from "
+        "a single lender. It has not been validated for lending, has had no "
+        "fair-lending or disparate-impact review, and must never be used to "
+        "decide anyone's access to credit or its price."
     )
 
     @field_validator("disclaimer")
@@ -292,7 +320,7 @@ class ApiSettings(_Section):
     def _disclaimer_is_present(cls, v: str) -> str:
         if len(v.strip()) < 40:
             raise ValueError(
-                "The non-clinical disclaimer may not be blanked or trimmed to a "
+                "The disclaimer may not be blanked or trimmed to a "
                 "token string. It is a requirement of this project, not a label."
             )
         return v

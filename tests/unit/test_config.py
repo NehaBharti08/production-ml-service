@@ -78,7 +78,7 @@ class TestFailFast:
             Settings(api={"disclaimer": bad})  # type: ignore[arg-type]
 
     def test_disclaimer_mentions_non_clinical_use(self) -> None:
-        assert "NOT FOR CLINICAL USE" in get_settings().api.disclaimer.upper()
+        assert "NOT A CREDIT DECISIONING SYSTEM" in get_settings().api.disclaimer.upper()
 
 
 class TestStrayEnvVars:

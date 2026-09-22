@@ -1,8 +1,13 @@
 """Late-arriving outcome ingestion.
 
-The endpoint that makes delayed-label monitoring possible. A 30-day readmission
-label cannot exist at prediction time, so it arrives here later and is joined on
+The endpoint that makes delayed-label monitoring possible. Whether a loan
+defaults cannot be known at origination — it takes the full 36- or 60-month
+term to resolve — so the outcome arrives here much later and is joined on
 ``prediction_id``.
+
+That lag is far longer than the medical case's 30 days, and it is the reason
+the drift monitor leans on input and score distributions: for most of a
+loan's life there is no label to measure performance against.
 
 Outcomes are **appended**, never written back into the prediction record.
 Mutating the original would mean rewriting the log file, which destroys the
@@ -39,7 +44,7 @@ async def record_outcome(payload: OutcomeRequest) -> OutcomeResponse:
     """
     ok = prediction_log.append_outcome(
         prediction_id=payload.prediction_id,
-        outcome_label=int(payload.readmitted_within_30_days),
+        outcome_label=int(payload.defaulted),
         source=payload.source,
     )
     if ok:
@@ -48,7 +53,7 @@ async def record_outcome(payload: OutcomeRequest) -> OutcomeResponse:
     log.info(
         "outcome_recorded",
         prediction_id=payload.prediction_id,
-        outcome=int(payload.readmitted_within_30_days),
+        outcome=int(payload.defaulted),
         source=payload.source,
         written=ok,
     )

@@ -277,7 +277,7 @@ class PredictionResponse(BaseModel):
 
     prediction_id: str
     request_id: str
-    readmission_probability: float = Field(ge=0.0, le=1.0)
+    default_probability: float = Field(ge=0.0, le=1.0)
     flagged: bool = Field(description="probability >= decision_threshold")
     decision_threshold: float
     model: ModelInfo
@@ -302,7 +302,11 @@ class OutcomeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     prediction_id: str = Field(..., min_length=8, max_length=64)
-    readmitted_within_30_days: bool
+    #: True if the loan charged off or defaulted. Only a TERMINAL outcome may be
+    #: reported: a loan that is merely late has not defaulted, and recording it
+    #: as either value would put a guess into the ground truth — the same rule
+    #: cleaning applies to the training labels.
+    defaulted: bool
     source: str = Field(default="manual", max_length=32)
 
 

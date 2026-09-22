@@ -114,7 +114,7 @@ async def predict(
     return PredictionResponse(
         prediction_id=record.prediction_id,
         request_id=record.request_id,
-        readmission_probability=round(probability, 6),
+        default_probability=round(probability, 6),
         flagged=bool(label),
         decision_threshold=model.decision_threshold,
         model=_model_info(model),
@@ -198,7 +198,7 @@ async def predict_batch(
             PredictionResponse(
                 prediction_id=record.prediction_id,
                 request_id=record.request_id,
-                readmission_probability=round(probability, 6),
+                default_probability=round(probability, 6),
                 flagged=bool(label),
                 decision_threshold=model.decision_threshold,
                 model=_model_info(model),

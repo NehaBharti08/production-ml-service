@@ -420,6 +420,6 @@ rollout:
     # where the container image itself is the problem.
     mechanisms:
       - "MLflow registry alias flip (champion -> previous version)"
-      - "kubectl rollout undo deployment/readmission-api"
+      - "kubectl rollout undo deployment/credit-default-api"
     max_seconds_to_rollback: 120
     require_tested_path: true
