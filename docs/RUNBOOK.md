@@ -1,8 +1,8 @@
 # Runbook
 
-> **NOT FOR CLINICAL USE.** This document describes an engineering demonstration of ML operations. Nothing here is clinically validated or fit to inform patient care.
+> **NOT A CREDIT DECISIONING SYSTEM.** This document describes an engineering demonstration of ML operations. Nothing here has been validated for lending or reviewed for fair-lending compliance, and none of it may decide anyone's access to credit.
 
-Incident response for the readmission risk service. One section per scenario:
+Incident response for the credit default risk service. One section per scenario:
 **symptom → first check → diagnostics → likely causes, ranked → remediation →
 escalation → post-incident**.
 
@@ -34,7 +34,7 @@ expensive minutes of an incident.
 | Lever | Command | Undoes |
 |---|---|---|
 | Model | `uv run mlservice retrain rollback --reason "..."` | A bad model. Alias flip, no deploy, seconds. |
-| Container | `kubectl rollout undo deployment/readmission-api` | A bad image — dependency, config, serving code. |
+| Container | `kubectl rollout undo deployment/credit-risk-api` | A bad image — dependency, config, serving code. |
 
 Reach for them early. The rollback budget is **120 seconds**, and it is set
 there precisely so that rolling back is cheaper than diagnosing. **Diagnose
@@ -110,7 +110,7 @@ docker compose logs --tail=100 api | grep -iE "slow|timeout|retry"
 
 ### Remediation
 
-- Over the knee → scale out. `kubectl scale deployment/readmission-api --replicas=4`
+- Over the knee → scale out. `kubectl scale deployment/credit-risk-api --replicas=4`
   (HPA does this at 70% CPU, but only if metrics-server is installed — kind does
   not ship it, and without it the HPA reports `<unknown>/70%` and does nothing).
 - Batch skew → not an incident. Note it and move on.
@@ -177,7 +177,7 @@ docker compose ps                                  # is anything unhealthy?
 uv run mlservice retrain rollback --reason "5xx spike after promotion"
 
 # If the image is the problem rather than the model:
-kubectl rollout undo deployment/readmission-api
+kubectl rollout undo deployment/credit-risk-api
 ```
 
 ### Escalation
@@ -201,8 +201,8 @@ Pods cycle in and out of the Service endpoints. `/health/live` stays 200 while
 ### First check
 
 ```bash
-kubectl get pods -l app=readmission-api -w
-kubectl describe pod -l app=readmission-api | grep -A5 -iE "readiness|liveness"
+kubectl get pods -l app=credit-risk-api -w
+kubectl describe pod -l app=credit-risk-api | grep -A5 -iE "readiness|liveness"
 curl -is localhost:8000/health/ready
 ```
 
@@ -236,7 +236,7 @@ failing.** A steady 503 is containment. Oscillation means something intermittent
 
 ```bash
 # Pin to the fallback and stop the oscillation, then fix the registry calmly.
-kubectl set env deployment/readmission-api MLSERVICE_MLFLOW__TRACKING_URI=""
+kubectl set env deployment/credit-risk-api MLSERVICE_MLFLOW__TRACKING_URI=""
 ```
 
 Serving from the local fallback is a **degraded but correct** state. It is not
@@ -359,9 +359,26 @@ upstream failure laundered into a model decision.
 2. **Genuine decay.** The honest and expected case over time.
 3. **Population shift the model does not handle.** Cross-reference §4.
 4. **A silently corrupted feature pipeline.** Run the behaviour suite:
-   `uv run pytest tests/behavior -m behavior`. A transform that drops
-   `number_inpatient` leaves PR-AUC nearly intact while blinding the model to
-   its strongest predictor — only a directional test notices.
+   `uv run pytest tests/behavior -m behavior`. Measured on the test split by
+   flattening one feature at a time and re-scoring:
+
+   | Feature lost in the pipeline | PR-AUC | Change |
+   |:--|--:|--:|
+   | *(intact)* | 0.2723 | — |
+   | `grade` | 0.2527 | **-0.0195** |
+   | `sub_grade` | 0.2703 | -0.0020 |
+   | `fico_range_low` | 0.2707 | -0.0016 |
+   | `int_rate` | 0.2739 | **+0.0016** |
+
+   Read those as an on-call engineer. Silently losing `grade` costs 0.0195 —
+   which looks like nothing on a dashboard, and is the *entire* margin over the
+   lender's own `int_rate` baseline of 0.2529. The model would still be scoring,
+   still be calibrated, still be inside every alert band, and no longer beating
+   the incumbent at all.
+
+   The other three move less than 0.002, and losing `int_rate` *improves* the
+   aggregate. No threshold on PR-AUC can catch any of this. Only a directional
+   test does.
 
 ### Remediation
 
@@ -427,8 +444,14 @@ df -h .                                 # disk full is a classic silent cause
 2. **Disk full / read-only filesystem.** The k8s manifest sets
    `readOnlyRootFilesystem: true` with an explicit `emptyDir` for `/app/logs`.
    If that mount is missing, every write fails.
-3. **Maturation window not yet elapsed.** A 30-day readmission label cannot
-   exist before 30 days. Confirm the window before declaring an incident.
+3. **Maturation window not yet elapsed.** A loan's outcome is not final until
+   its term ends — 1,096 days for the 92.4% on a 36-month term, 1,826 for the
+   rest. Confirm the window before declaring an incident.
+
+   Note what that means for this alert: the watchdog is keyed to the *arrival
+   gap* in matured labels, not to the maturation lag, because loans originate
+   continuously and so reach term continuously. See
+   `configs/thresholds.yaml` -> `label_pipeline_stalled`.
 4. **`prediction_id` join failing** — outcomes arriving but matching nothing.
 
 ### Remediation
@@ -592,12 +615,14 @@ Stated rather than left to be discovered:
   no experience behind one.
 - **Multi-instance / split-brain scenarios.** The prediction log is per-instance
   NDJSON. Aggregating across replicas is unsolved and out of scope.
-- **Data-privacy incidents.** The service holds no PII: it reads a public,
-  de-identified dataset and stores no patient identifiers beyond what a caller
-  sends.
-- **Anything about clinical impact.** This model is not clinically validated and
-  must not inform care. There is no clinical escalation path because there must
-  be no clinical use.
+- **Data-privacy incidents.** The service reads a public dataset. It redacts
+  identifiers and quasi-identifiers — `id`, `member_id`, `zip_code`,
+  `emp_title`, `annual_inc` — from application logs, verified with a positive
+  control. It stores nothing about a borrower beyond what a caller sends.
+- **Anything about a lending decision.** This model has had no fair-lending or
+  disparate-impact review and must not decide anyone's access to credit or its
+  price. There is no adverse-action escalation path because there must be no
+  lending use.
 
 ---
 

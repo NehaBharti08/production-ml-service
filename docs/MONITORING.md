@@ -1,7 +1,7 @@
 # Monitoring Design
 
-> **NOT FOR CLINICAL USE.** This document describes monitoring for an
-> engineering demonstration. Nothing here is clinically validated.
+> **NOT A CREDIT DECISIONING SYSTEM.** This document describes monitoring for
+> an engineering demonstration. Nothing here has been validated for lending.
 
 Every threshold in this project answers "why that number?" with something other
 than "it looked about right". Arbitrary thresholds are the clearest sign that
@@ -350,15 +350,29 @@ fires beforehand too.
 The induced effect is instead demonstrated on the **manipulated feature
 specifically**:
 
-| Window | Origin | `age` PSI | Threshold | Breaching |
+| Window | Origin | `grade` PSI | Threshold | Breaching |
 |--:|:--|--:|--:|:--|
-| 0 | real | 0.0211 | 0.10 | no |
-| 1 | real | 0.0143 | 0.10 | no |
-| 2 | **induced** | **0.5292** | 0.10 | **yes** |
+| 0 | real | 0.1021 | 0.10 | yes |
+| 1 | real | 0.0560 | 0.10 | no |
+| 2 | **induced** | **0.2746** | 0.10 | **yes** |
+| 3 | **induced** | **0.3137** | 0.10 | **yes** |
+| 4 | **induced** | **0.3032** | 0.10 | **yes** |
 
-Prediction drift responds too: the alert rate moves from a 0.26 reference to
-**0.414** in the induced window, because over-sampling older patients raises the
-share above the decision threshold.
+Prediction drift responds too. The alert rate moves from a 0.3334 reference to
+**0.4388, 0.4620 and 0.4572** across the three induced windows — +32%, +39% and
++37% — because over-sampling the sub-prime D-G shoulder raises the share above
+the decision threshold.
+
+**Window 0 breaches, and it is a clean window.** That is not a defect in the
+demo and it is not smoothed over: the reference is the training period ending
+2014-12 and the replay runs on 2015 loans, so there is genuine drift between
+them before anything is manufactured. It sits at 0.1021 against a 0.10
+threshold — a hair over — while the induced windows sit near 0.30. The
+two-window confirmation rule is what separates those two situations, and this
+is precisely the case it exists for.
+
+A clean prefix that happened to be perfectly quiet would be a nicer picture and
+a weaker demonstration.
 
 Every artefact carries `drift_origin: "real" | "induced"` as its first key, and
 every manipulation records exactly what it changed. This is enforced by test,

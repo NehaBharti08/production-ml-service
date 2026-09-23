@@ -12,10 +12,10 @@
 *_credentials.json
 .secrets.baseline.local
 
-# --- Patient-level data ------------------------------------------------------
-# The UCI dataset is public, but we still never commit row-level records:
-# it keeps the repo honest, small, and reviewable. data/README.md explains
-# how to fetch it; data/checksums.txt makes that fetch reproducible.
+# --- Borrower-level data -----------------------------------------------------
+# The Lending Club dataset is public, but we still never commit row-level
+# records: it keeps the repo honest, small, and reviewable. data/README.md
+# explains how to fetch it; data/checksums.txt makes that fetch reproducible.
 data/raw/
 data/interim/
 data/processed/
@@ -27,6 +27,12 @@ data/monitoring/
 *.arrow
 *.xlsx
 !data/checksums.txt
+
+# Request payloads generated for the k8s canary demo. These are real rows
+# lifted from the test split, so they are borrower-level data wearing a .json
+# extension — which every pattern above would have missed.
+/payload.json
+/payload_varied.json
 
 # --- Model binaries ----------------------------------------------------------
 # Models live in the MLflow registry (local) and an HF Model repo (remote),
@@ -129,7 +135,7 @@ coverage.xml
 
 # --- Notebooks ---------------------------------------------------------------
 # nbstripout also runs in pre-commit; this is belt and braces, because a
-# notebook output cell can contain patient rows.
+# notebook output cell can contain borrower rows.
 .ipynb_checkpoints/
 */.ipynb_checkpoints/*
 

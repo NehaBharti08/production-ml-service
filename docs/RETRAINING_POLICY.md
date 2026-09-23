@@ -1,6 +1,6 @@
 # Retraining Policy
 
-> **NOT FOR CLINICAL USE.** This document describes an engineering demonstration of ML operations. Nothing here is clinically validated or fit to inform patient care.
+> **NOT A CREDIT DECISIONING SYSTEM.** This document describes an engineering demonstration of ML operations. Nothing here has been validated for lending or reviewed for fair-lending compliance, and none of it may decide anyone's access to credit.
 
 Every number in this document is read from [`configs/thresholds.yaml`](../configs/thresholds.yaml)
 and executed by [`src/mlservice/retraining/`](../src/mlservice/retraining/). Nothing here is
@@ -112,7 +112,7 @@ go stale. The margin is one-sided — the challenger may be better without limit
 
 > Brier ≤ incumbent × **1.02**  **and**  ECE ≤ **0.05**
 
-**This gate is why the repository exists.** A challenger that ranks patients better but
+**This gate is why the repository exists.** A challenger that ranks borrowers better but
 whose probabilities are systematically wrong is a *regression* for a health-adjacent use
 case, and almost every promotion pipeline in the wild would ship it because AUC went up.
 
@@ -150,12 +150,14 @@ prevents them getting worse.
 > **all** Phase 4 behaviour tests pass — no partial credit
 
 Catches a corrupted feature pipeline that every aggregate metric sails past. A model can
-post an excellent PR-AUC while `number_inpatient` is silently mapped to the wrong
-column; the directional test that asserts *more prior inpatient visits must not decrease
-predicted risk* catches it, and the metric does not.
+post an excellent PR-AUC while `grade` is silently mapped to the wrong column. The
+directional test that asserts *a worse grade must not lower predicted risk* catches it;
+the metric does not. Measured: flattening `grade` costs 0.0195 PR-AUC — invisible on a
+dashboard, and the entire margin over the lender's own pricing. See the ablation table
+in [RUNBOOK.md](RUNBOOK.md) §5.
 
-The pass rate is 1.0 rather than 0.95 because these encode clinical priors. "95% of our
-clinical assumptions hold" is not a thing to be relaxed about.
+The pass rate is 1.0 rather than 0.95 because these encode lending priors. "95% of our
+assumptions about credit risk hold" is not a thing to be relaxed about.
 
 ### 3.5 Operational — can it actually serve?
 
@@ -233,7 +235,7 @@ Two levers, because there are two layers that can be wrong:
 | Layer | Mechanism | When |
 |---|---|---|
 | Model | `mlservice retrain rollback --reason "..."` | The model is bad. Alias flip, no deploy. |
-| Container | `kubectl rollout undo deployment/readmission-api` | The image is bad — dependency, config, serving code. |
+| Container | `kubectl rollout undo deployment/credit-risk-api` | The image is bad — dependency, config, serving code. |
 
 Budget: **120 seconds** to rollback. Not because 120 is magic, but because a rollback
 path that takes longer than that stops being the first thing you reach for during an

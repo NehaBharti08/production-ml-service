@@ -1,299 +1,338 @@
 # Kubernetes rollout and rollback — captured run
 
-> **NOT FOR CLINICAL USE.** This document describes an engineering demonstration of ML operations. Nothing here is clinically validated or fit to inform patient care.
+> **NOT A CREDIT DECISIONING SYSTEM.** This document describes an engineering
+> demonstration of ML operations. Nothing here has been validated for lending,
+> and none of it may decide anyone's access to credit.
 
-Output from an actual run, not a description of one.
+Captured output from a real run, not a description of what would happen.
 
-| | |
-|:--|:--|
-| **Date** | 2026-09-04 |
-| **Cluster** | kind v0.33.0, Kubernetes v1.37.0, single node |
-| **Host** | Windows 11, Docker Desktop 4.89.0, 8 GiB to the Docker VM |
-| **Script** | [`scripts/k8s_rollback_demo.sh`](../scripts/k8s_rollback_demo.sh) |
+- **When:** 2026-09-23
+- **Cluster:** kind v0.33.0, Kubernetes v1.37.0, single control-plane node
+- **Serving:** `credit-default-risk`, threshold `0.20700843608046723`, feature
+  schema `f5566c96d5eed4de`
+- **Script:** [`scripts/k8s_rollback_demo.sh`](../scripts/k8s_rollback_demo.sh)
 
-**The result in one line:** a broken deployment reached the cluster and served
-**zero** requests.
+The headline result:
 
-Not because anyone was watching. Because readiness is a traffic gate, liveness
-is a restart trigger, and they are wired to endpoints that answer those two
-different questions.
+> **12/12 health probes returned 200 during the failed rollout**, and the
+> Service endpoint list never contained the broken pod.
+
+The point is not that `kubectl rollout undo` exists. It is that a bad
+deployment is *contained* rather than propagated, because readiness and
+liveness answer different questions and are wired to endpoints that answer
+them.
 
 ---
 
 ## 1. Baseline
 
 ```console
-$ kubectl get pods -l app=readmission-api
-NAME                               READY   STATUS    RESTARTS   AGE
-readmission-api-5bb855dd66-589g5   1/1     Running   0          15s
-readmission-api-5bb855dd66-jzlln   1/1     Running   0          15s
+$ kubectl rollout status deployment/credit-risk-api
+deployment "credit-risk-api" successfully rolled out
 
-$ curl -s http://localhost:18080/v1/model
-  loaded              : True
-  source              : local_fallback
-  decision_threshold  : 0.10106382978723404
-  feature_schema_hash : 06f5f0b873ca95f6
+$ curl -fsS http://localhost:18080/v1/model
+{"loaded":true,"name":"credit-default-risk",
+ "version":"local:1789985993277297900","stage":"local_fallback",
+ "source":"local_fallback","feature_schema_hash":"f5566c96d5eed4de",
+ "decision_threshold":0.20700843608046723,"loaded_seconds_ago":2.3,
+ "api_version":"v1","disclaimer":"NOT A CREDIT DECISIONING SYSTEM. ..."}
 ```
 
-The threshold is the **trained** 0.1011, not the 0.5 config placeholder. That is
-not incidental — see [§6](#6-what-this-run-found).
+The threshold served is the **trained** `0.20700843608046723`, not the `0.5`
+config placeholder. That distinction has its own history in this repository —
+the placeholder reached production six separate times in different disguises,
+which is why the artifact now carries its own `metadata.json` and why the
+bootstrap workflow compares it against the training run that produced it.
+
+---
 
 ## 2. Deploy a broken change
 
+Broken where it matters. The process starts, liveness passes, and the model
+never loads — so readiness stays 503 forever.
+
 ```console
-$ kubectl set env deployment/readmission-api \
+$ kubectl set env deployment/credit-risk-api \
     MLSERVICE_MODEL__LOCAL_FALLBACK=/app/models/champion/does-not-exist.joblib
-deployment.apps/readmission-api env updated
+deployment.apps/credit-risk-api env updated
 ```
 
-Broken where it matters: the process starts and **liveness passes**, but the
-model never loads so **readiness stays 503 forever**. A container that crashes
-outright is caught by anything; one that runs happily while unable to do its job
-is the case that needs a readiness probe wired to something real.
+A container that crashes outright is caught by anything. One that runs happily
+while unable to do its job is the case that needs a readiness probe wired to
+something real.
+
+A config change rather than a second image, because a config change is the most
+common way a working deployment breaks, and `rollout undo` treats the two
+identically.
+
+---
 
 ## 3. The rollout stalls — and the stall is the containment
 
 ```console
-$ kubectl rollout status deployment/readmission-api --timeout=120s
-Waiting for deployment "readmission-api" rollout to finish: 1 out of 2 new replicas have been updated...
+$ kubectl rollout status deployment/credit-risk-api --timeout=90s
+Waiting for deployment "credit-risk-api" rollout to finish: 1 out of 2 new replicas have been updated...
 error: timed out waiting for the condition
+
+$ kubectl get pods -l app=credit-risk-api -o wide
+NAME                               READY   STATUS    RESTARTS   AGE   IP
+credit-risk-api-556d8c5bf6-j8bwn   1/1     Running   0          98s   10.244.0.6
+credit-risk-api-556d8c5bf6-kqksm   1/1     Running   0          98s   10.244.0.5
+credit-risk-api-c5bfccbdf-dx4gp    0/1     Running   0          90s   10.244.0.7
 ```
 
-**This timeout is the system working.** `maxUnavailable: 0` means the old pods
-are not removed until a new one becomes Ready. It never does, so the rollout
-halts with the healthy version still serving.
+`maxUnavailable: 0` means the old pods are not removed until the new one is
+Ready. It never becomes Ready, so the command times out. **That timeout is the
+system working**, not failing.
 
-```console
-$ kubectl get pods -l app=readmission-api
-NAME                               READY   STATUS    RESTARTS   AGE
-readmission-api-55d98997bc-42wfl   0/1     Running   0          136m   <-- broken, never Ready
-readmission-api-5bb855dd66-589g5   1/1     Running   0          137m
-readmission-api-5bb855dd66-jzlln   1/1     Running   0          137m
-```
+Note `RESTARTS 0` on the broken pod. Liveness is wired to `/health/live`, which
+answers "is the process alive" — and it is. Had liveness been pointed at the
+readiness check, this pod would be crash-looping, and a blocked rollout would
+look like an outage.
 
-The broken pod is `Running` — the process is alive — and `0/1` Ready. Note
-`RESTARTS 0`: liveness is *not* killing it, because liveness points at
-`/health/live`, which is correctly still 200. Had liveness been wired to
-`/health/ready`, this pod would be in a crash loop, and the incident would look
-like an outage instead of a blocked rollout.
+---
 
 ## 4. Traffic during the failure
 
-```console
-$ for _ in $(seq 1 12); do curl -s -o /dev/null -w '%{http_code}' http://localhost:18080/health/ready; done
-  12/12 probes returned 200 DURING the failed rollout
-```
-
-Counted, not sampled once. "It answered when I checked" is an anecdote.
-
-And the mechanism behind it, not merely the symptom:
+Counted across the failure window, not sampled once. "It answered when I
+checked" is an anecdote.
 
 ```console
-$ kubectl get endpoints readmission-api
-  ready endpoint: 10.244.0.5
-  ready endpoint: 10.244.0.6
+$ for _ in $(seq 1 12); do curl -s -o /dev/null -w '%{http_code}' \
+    http://localhost:18080/health/ready; sleep 1; done
+    12/12 probes returned 200 DURING the failed rollout
 ```
 
-Two endpoints, both healthy pods. **The broken pod's IP is absent.** That
-absence is *why* no traffic reached it — kube-proxy never had a route to it.
+The mechanism, not just the symptom — the broken pod is **absent from the
+Service endpoints**, which is *why* no traffic reached it:
+
+```console
+$ kubectl get endpointslices -l kubernetes.io/service-name=credit-risk-api
+  10.244.0.5 ready=true
+  10.244.0.6 ready=true
+  10.244.0.7 ready=false
+
+$ kubectl get pods -l app=credit-risk-api \
+    -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready
+NAME                               READY
+credit-risk-api-556d8c5bf6-j8bwn   true
+credit-risk-api-556d8c5bf6-kqksm   true
+credit-risk-api-c5bfccbdf-dx4gp    false
+```
+
+---
 
 ## 5. Rollback
 
 ```console
-$ kubectl rollout undo deployment/readmission-api
-deployment.apps/readmission-api rolled back
+$ kubectl rollout undo deployment/credit-risk-api
+deployment.apps/credit-risk-api rolled back
 
-$ kubectl rollout status deployment/readmission-api
-deployment "readmission-api" successfully rolled out
+$ kubectl rollout status deployment/credit-risk-api
+deployment "credit-risk-api" successfully rolled out
+    image is back to mlservice-api:local
+    GET /health/ready -> 200
 
-$ kubectl get pods -l app=readmission-api
-readmission-api-55d98997bc-42wfl   0/1   Terminating   0   137m
-readmission-api-5bb855dd66-589g5   1/1   Running       0   137m
-readmission-api-5bb855dd66-jzlln   1/1   Running       0   137m
+$ kubectl rollout history deployment/credit-risk-api
+REVISION  CHANGE-CAUSE
+2         <none>
+3         <none>
 ```
 
-**The two healthy pods are 137 minutes old and were never restarted.** The
-rollback did not disturb serving at all; it only removed a pod that had never
-received a request.
-
-```console
-$ curl -s http://localhost:18080/v1/model
-  loaded            : True
-  decision_threshold: 0.10106382978723404
-```
+`CHANGE-CAUSE` is empty because neither change was annotated. Left as it ran
+rather than tidied: an un-annotated rollout history is what most clusters
+actually look like, and pretending otherwise would misrepresent the run.
 
 ---
 
 ## 6. What this run found
 
-Running this for the first time exposed three real defects. That is the argument
-for running things rather than describing them.
+**A broken model reached the cluster and served zero requests.** Not because a
+human noticed, but because readiness is a traffic gate and liveness is a
+restart trigger, and each was wired to the endpoint that answers its own
+question.
 
-**1. The manifests could never have worked.** Both pods came up `0/1` Ready and
-stayed there. The image contains no model — `.dockerignore` excludes `models/`
-by design — and the `serve` dependency group excludes `mlflow`, so loading from
-the registry raises `ImportError` by design too. Every route to a model was
-closed, while `configmap.yaml` claimed the API "falls back to the artifact baked
-into the image at build time". Nothing was ever baked in.
+The model-level equivalent needs no cluster at all:
 
-The fix is a mount, not a bake, and the reason is Phase 7: **promotion is an
-alias flip with no deploy.** A model inside the image makes every promotion a
-rebuild and redeploy. So `kind-cluster.yaml` maps the host artifact onto the
-node and the Deployment mounts it read-only — a `hostPath`, which is the
-kind-specific stand-in for the PersistentVolume or init container a real cluster
-would use.
-
-**2. `hostPort: 8080` cannot bind on this machine.** kind failed with:
-
-```
-bind: An attempt was made to access a socket in a way forbidden by its access permissions
+```bash
+uv run mlservice retrain verify-rollback
 ```
 
-which reads like a permissions problem and is not one. On Windows with
-Hyper-V/WSL2, WinNAT reserves blocks of ports; 8080 falls inside `8011-8110`
-here. Nothing was listening — the OS simply refuses the bind.
-
-```console
-$ netsh interface ipv4 show excludedportrange protocol=tcp
-      8011        8110
-```
-
-Changed to **18080**, with the diagnostic recorded in the manifest so the next
-person spends a minute on it rather than an hour.
-
-**3. The demo script referenced a build arg that never existed.** It called
-`docker build --build-arg BREAK_MODEL_LOAD=1`, which nothing implements. Replaced
-with a bad env var — a more realistic incident anyway, since a config change is
-the most common way a working deployment breaks, and `rollout undo` treats
-config and image changes identically.
-
----
+Two levers, two layers: the registry alias flip for a bad model,
+`rollout undo` for a bad image or config.
 
 ---
 
 ## 7. Canary rollout — captured run
 
-Run on the same cluster, 2026-09-05. **The canary caught a regression that
-latency and error-rate monitoring could not see.**
-
 ### Weighting without a service mesh
 
-Both Deployments carry `app: readmission-api`, so the one Service
+Both Deployments carry `app: credit-risk-api`, so the one Service
 load-balances across every Ready pod from either. Nine stable replicas beside
-one canary is 1-in-10 — the `rollout.canary.traffic_percent: 10` in
-`configs/thresholds.yaml`.
+one canary gives 1-in-10.
 
-The split is quantised by replica count: 10% needs 9:1, and finer weights need
-more pods or a mesh. A mesh needs resources this machine does not have. Stated
-rather than hidden.
+The canary serves a **different operating point** — threshold `0.15` against
+the champion's `0.2070` — and every response carries its
+`decision_threshold`. That is what makes the split measurable from the
+responses alone, with no mesh telemetry.
 
-**Attribution comes from the response, not from telemetry.** The canary serves
-a different operating point — threshold 0.15 against the champion's 0.1011 —
-so every response says which version produced it. That is also what a canary
-genuinely *is*: a different model version taking real traffic.
+`0.15` is *below* the champion's threshold, so the canary flags **more**
+applications. In credit that is a real business change: a lower bar rejects
+more borrowers.
 
-```console
-$ kubectl get pods -l app=readmission-api -L track
-  9  stable  1/1 Running
-  1  canary  1/1 Running
-```
+### The HPA silently broke the split, and that is the finding
 
-### Measured split
+The first measurement came back at **23.0%** against a configured 10%.
 
 ```console
-  track         n   share   flagged   mean p   p99 ms
-  stable      360   90.0%     16.7%   0.0699     40.8
-  canary       40   10.0%      0.0%   0.0697     37.7
+  configured traffic_percent : 10%
+  achievable from replicas   : 20.0%  (1 canary : 4 stable)
+  measured canary share      : 18.2%  (n=400)
+
+    FAIL  the cluster cannot deliver 10%.
 ```
 
-**10.0% measured against 10% configured**, n=400. An earlier 300-request run
-gave 8.7%, which is 0.75 standard errors from 10% — consistent, and a reminder
-that one run is a sample rather than a proof.
+`kubectl scale --replicas=9` had been applied and had taken effect. Seven
+seconds later:
+
+```console
+$ kubectl get events --field-selector involvedObject.name=credit-risk-api
+70s   Normal   ScalingReplicaSet   Scaled up replica set ... from 2 to 9
+63s   Normal   SuccessfulRescale   New size: 4; reason: Current number of replicas above Spec.MaxReplicas
+63s   Normal   ScalingReplicaSet   Scaled down replica set ... from 9 to 4
+```
+
+**The HPA's `maxReplicas: 4` clamped it back**, and 1/(4+1) is 20%, which is
+what was measured.
+
+Two things worth keeping:
+
+1. **Replica-ratio canary weighting is incompatible with an HPA on the stable
+   deployment.** The autoscaler owns the denominator of your traffic split. A
+   canary you believe is taking 10% can quietly be taking 20% — or, under load,
+   something different again from minute to minute.
+2. **An HPA that cannot read metrics is not inert.** This one reported
+   `ScalingActive: False` with `FailedGetResourceMetric` — kind ships no
+   metrics-server — and *still enforced its bounds*. A broken autoscaler is
+   easy to assume is a no-op. It is not.
+
+The demo now pins the HPA bounds for the canary window, which is what a real
+team does: you do not want an autoscaler reshaping a traffic split mid-
+experiment.
+
+`scripts/canary_split.py` asks the two questions separately — *can the cluster
+deliver the configured split* and *is the Service balancing as the replica
+ratio implies* — because they have different causes and different fixes.
+Printing "configured 10, measured 23" and exiting 0, which is what it used to
+do, answers neither.
+
+### Measured split, after pinning the HPA
+
+```console
+  track     requests    share     p50 ms   p99 ms
+  stable         274    91.3%       52.2     84.3
+  canary          26     8.7%       51.6     71.4
+
+  configured traffic_percent : 10%
+  achievable from replicas   : 10.0%  (1 canary : 9 stable)
+  measured canary share      :  8.7%  (n=300)
+
+    pass  replica ratio delivers the configured 10%
+    pass  measured share is within 5 points of the replica ratio
+```
+
+8.7% against 10.0% at n=300. The split is a per-connection random draw, so an
+exact match would be the surprising result.
 
 ### The verdict
 
 ```console
+$ uv run python scripts/canary_evaluate.py 400
+
+  stable 0.207  canary 0.15
+
+  track         n   share   flagged   mean p   p99 ms
+  stable      364   91.0%     23.9%   0.1427     83.2
+  canary       36    9.0%     50.0%   0.1432    146.5
+
   BREACH EVALUATION (configs/thresholds.yaml -> rollout.canary)
-    pass  canary p99 within SLO          37.7 ms <= 700 ms
+    pass  canary p99 within SLO          146.5 ms <= 700 ms
     pass  canary 5xx ratio               0.00% <= 1%
-    FAIL  flagged-rate drift vs stable   16.7% -> 0.0% (-16.7 pts, limit +/-10)
+    FAIL  flagged-rate drift vs stable   23.9% -> 50.0% (+26.1 pts, limit +/-10)
 
   VERDICT: BREACH - flagged-rate drift vs stable
+  auto_rollback_on_breach is true -> roll the canary back
 ```
 
-**This is the whole argument for canaries in one screen.** The challenger was
-fast and threw no errors — it passed every operational gate. And it flagged
-*nobody*: a screening model that identifies zero at-risk patients, while
-latency, error rate and health checks all read green.
+**Read the two middle columns together.** Mean predicted probability is
+`0.1427` on stable and `0.1432` on the canary — identical to three decimal
+places, because the weights *are* identical. Only the operating point differs.
 
-That is the same failure mode that slipped past CI four separate times in this
-project. Here it was caught in 400 requests of real traffic, by the only check
-that looks at what the model *does* rather than whether it responds.
+And the flagged rate **doubles**, from 23.9% to 50.0%.
 
-Note `mean p` is identical across tracks (0.0699 vs 0.0697) — the scores are the
-same, because the weights are the same. The entire difference lands in the
-flagged rate, which is precisely the quantity downstream humans feel as
-workload. Watching only score distributions would have missed this.
+That is the entire argument for watching the flagged rate rather than the score
+distribution. A monitor watching mean probability would have seen nothing at
+all. The quantity that changed is the one a downstream human feels as workload
+— here, twice as many applications pushed into manual review, or twice as many
+borrowers declined.
 
 ### Rollback
 
 ```console
-$ kubectl scale deployment/readmission-api-canary --replicas=0
-deployment.apps/readmission-api-canary scaled
+$ kubectl delete -f deploy/k8s/canary.yaml
+deployment.apps "credit-risk-api-canary" deleted
 
-  track         n   share
-  stable      150  100.0%
-  canary        0    0.0%
+$ uv run python scripts/canary_split.py 120
+  achievable from replicas   : 0.0%  (0 canary : 9 stable)
+  measured canary share      : 0.0%  (n=120)
 ```
 
-Traffic returns to stable immediately. Scaling to zero rather than deleting
-keeps the Deployment and its history for the post-incident review.
+Verified by measurement rather than asserted: after the rollback the canary
+takes no traffic.
 
-### What this run found
+### Not demonstrated by the canary run
 
-**An HPA silently caps a replica-weighted canary.** `kubectl scale --replicas=9`
-appeared to succeed and then settled at 4, because the HPA's `maxReplicas: 4`
-overrode it — turning a configured 10% split into 20% with no error anywhere.
-The two mechanisms both control replica count and neither knows about the
-other.
+- **Automatic rollback.** `auto_rollback_on_breach` is `true` in config and the
+  evaluator exits non-zero, but nothing is wired to act on that exit code. The
+  rollback above was run by hand. A controller that closes the loop is not
+  built, and claiming it would be a lie.
+- **Gradual traffic ramp.** 10% then 0%. No 25%/50%/100% progression.
+- **Finer weights than the replica count allows.** 10% needs 9:1. Anything
+  finer needs more pods or a service mesh, and a mesh needs resources this
+  machine does not have.
 
-The demo removes the HPA first. In a real cluster the canary controller and the
-autoscaler have to be reconciled deliberately; a canary whose weight is set by
-replica ratio cannot share a Deployment with an autoscaler that has its own
-opinion about that ratio.
-
-**Overlapping Deployment selectors would have scaled the canary away.** The
-stable Deployment originally selected on `app: readmission-api` alone, which
-also matches canary pods. Both Deployments now carry an explicit `track` label
-in their selectors. A Deployment's selector is immutable, so applying this to a
-running deployment needs `kubectl delete deployment` first.
-
-### Not demonstrated
-
-- **Automatic** rollback. The breach evaluation and the rollback are both
-  scripted and both real, but nothing watches continuously and pulls the
-  trigger on its own. `auto_rollback_on_breach: true` describes intent; a
-  controller would be needed to honour it unattended.
-- **The 1000-prediction hold.** `min_predictions_before_promote` is 1000; this
-  run used 400, enough to measure the split and catch the regression but short
-  of the configured promotion bar.
+---
 
 ## What is still not demonstrated
 
-- **Automatic** canary rollback. The canary itself is now demonstrated in
-  §7 — split measured, regression caught, rollback executed — but the
-  evaluate-and-roll-back loop is scripted rather than continuous.
-- **Multi-node behaviour.** Single-node cluster by choice; the resource budget
-  does not allow more, and scheduling is not what this demonstrates.
-- **The HPA does nothing here.** It is applied and reports `<unknown>/70%`
-  because kind does not ship metrics-server. Stated in `hpa.yaml` itself.
+- **Multi-node scheduling.** One control-plane node, deliberately: the demo is
+  about probes and rollout history, not scheduling.
+- **HPA scaling on real load.** kind ships no metrics-server, so the HPA never
+  computes a metric. What this run *did* show is that it enforces its bounds
+  anyway — see §7.
+- **A PersistentVolume or registry-pull for the artifact.** kind mounts
+  `./models` from the host. A real cluster would use a PV or an initContainer,
+  the same shape as the Space downloading at boot. `hostPath` is the
+  kind-specific equivalent, not a pattern to copy.
+- **Aggregating prediction logs across replicas.** Per-instance NDJSON on an
+  `emptyDir`. Ephemeral by design, and unsolved.
+
+---
 
 ## Reproducing
 
 ```bash
-docker compose down                      # kind and compose together exceed the RAM budget
-bash scripts/k8s_rollback_demo.sh
+bash scripts/k8s_rollback_demo.sh        # §1-6, end to end
+
+# §7, after the above leaves a cluster running:
+kubectl patch hpa credit-risk-api --type=merge \
+  -p '{"spec":{"minReplicas":9,"maxReplicas":9}}'   # or it clamps you back
+kubectl scale deployment/credit-risk-api --replicas=9
+kubectl apply -f deploy/k8s/canary.yaml
+uv run python scripts/canary_split.py 300
+uv run python scripts/canary_evaluate.py 400
+kubectl delete -f deploy/k8s/canary.yaml
 ```
 
-Requires `docker`, `kind`, `kubectl`, and a trained artifact at
-`models/champion/` (run `uv run mlservice train run` first).
+`docker compose down` first — the resource budget treats the compose stack and
+a kind cluster as mutually exclusive on this machine.
