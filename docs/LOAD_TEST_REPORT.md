@@ -1,7 +1,8 @@
 # Load Test Report
 
-> **NOT FOR CLINICAL USE.** This document reports engineering measurements of a
-> demonstration service. Nothing here is clinically validated.
+> **NOT A CREDIT DECISIONING SYSTEM.** This document reports engineering
+> measurements of a demonstration service. Nothing here has been validated for
+> lending.
 
 **Date:** 2026-08-18 · **Tool:** Locust 2.x · **Target:** host uvicorn process,
 single worker · **Hardware:** i5-12450H (8C/12T), 15.6 GB RAM, Windows 11
@@ -134,8 +135,8 @@ Because the transform cost is per *call*, not per row:
 | 500 | 107 ms | 0.21 ms |
 
 **~350× better per item at batch 200.** Any caller scoring more than a handful
-of patients should use `/v1/predict/batch`; the README and API docs should say
-so rather than leaving it as an implementation detail.
+of applications should use `/v1/predict/batch`; the README and API docs should
+say so rather than leaving it as an implementation detail.
 
 ## 6. A 10× win found by profiling
 

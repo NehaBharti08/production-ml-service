@@ -14,7 +14,7 @@
 
 | | |
 |:--|:--|
-| Name | `readmission-risk` |
+| Name | `credit-default-risk` |
 | Version | unregistered |
 | Type | logistic_l2 — regularised logistic regression |
 | Calibration | isotonic, fitted on validation |
@@ -177,6 +177,10 @@ The same threshold is applied to every group. Per-group thresholds would improve
 
 ### The disparities, stated without softening
 
+**`addr_state`.** Recall runs from **0.186** (NH, n=775) to **0.725** (MS, n=1,005) — a spread of 54.0 percentage points across subgroups large enough to analyse. Geography is also a top-ten coefficient, so this spread falls on something the model structurally relies on — which is precisely the terrain fair-lending analysis governs.
+**`emp_length`.** Recall runs from **0.397** (10+ years, n=51,831) to **0.706** (None, n=11,439) — a spread of 30.9 percentage points across subgroups large enough to analyse. Employment length is a socioeconomic proxy, and is treated as one.
+**`home_ownership`.** Recall runs from **0.350** (MORTGAGE, n=75,499) to **0.572** (RENT, n=68,116) — a spread of 22.2 percentage points across subgroups large enough to analyse. Housing tenure correlates with wealth, not only with risk.
+**`income_band`.** Recall runs from **0.205** (Q4_highest, n=39,456) to **0.688** (Q1_lowest, n=44,741) — a spread of 48.3 percentage points across subgroups large enough to analyse. The band is derived from stated income, which is self-reported.
 **The mechanism is visible in the coefficients, and it is uncomfortable.** Two facts about what drives this model:
 
 1. **`grade` and `sub_grade` dominate.** `grade_A` carries the largest single weight (-0.78), with `sub_grade_A1` next (-0.57). Those columns are *Lending Club's own risk assessment*, so this model substantially inherits their underwriting judgment — including any bias in it. A model that reproduces an existing lender's decisions will reproduce that lender's disparities, and will look accurate while doing so.

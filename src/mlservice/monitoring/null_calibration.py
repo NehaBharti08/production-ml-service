@@ -66,7 +66,7 @@ def population_stability_index(
 
     Numeric features use **quantile** edges derived from the reference, not
     equal-width ones. Equal-width bins on a skewed feature — and most features
-    here are skewed, e.g. ``number_inpatient`` is zero for most patients — put
+    here are skewed, e.g. ``pub_rec`` is zero for 87.1% of loans — put
     nearly all mass in one bin, so the statistic loses the resolution to detect
     anything.
 
@@ -95,8 +95,8 @@ def population_stability_index(
 def _quantile_edges(series: pd.Series, bins: int) -> np.ndarray:
     """Quantile bin edges, deduplicated.
 
-    A feature where one value dominates (``number_emergency`` is 0 for most
-    patients) produces duplicate quantiles. Deduplicating collapses the bin
+    A feature where one value dominates (``delinq_2yrs`` is 0 for 82.7% of
+    loans) produces duplicate quantiles. Deduplicating collapses the bin
     count rather than creating zero-width bins, which would divide by zero.
     """
     quantiles = np.linspace(0, 1, bins + 1)

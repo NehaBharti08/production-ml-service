@@ -53,7 +53,7 @@ def _flatten_validation_errors(exc: RequestValidationError) -> list[dict[str, An
     """Turn pydantic's nested errors into flat, actionable entries."""
     flat: list[dict[str, Any]] = []
     for error in exc.errors():
-        # loc is like ("body", "features", "time_in_hospital"); the leading
+        # loc is like ("body", "features", "fico_range_low"); the leading
         # "body" is noise to the caller, who knows what they sent.
         location = [str(part) for part in error.get("loc", []) if part != "body"]
         entry: dict[str, Any] = {

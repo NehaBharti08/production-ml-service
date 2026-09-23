@@ -188,7 +188,7 @@ class TestBehavioralGate:
             behavioral={
                 "total": 20,
                 "passed": 19,
-                "failures": ["test_more_prior_inpatient_admissions_never_lowers_risk"],
+                "failures": ["test_a_worse_grade_never_lowers_risk"],
             }
         )
         result = gates.behavioral_gate(challenger)

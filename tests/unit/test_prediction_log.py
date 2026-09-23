@@ -20,7 +20,7 @@ pytestmark = pytest.mark.unit
 def _record(**overrides: object) -> prediction_log.PredictionRecord:
     defaults = {
         "request_id": "req-1",
-        "features_raw": {"age": "[70-80)", "number_inpatient": 1},
+        "features_raw": {"grade": "B", "loan_amnt": 10000.0},
         "predicted_proba": 0.1234,
         "decision_threshold": 0.1011,
         "model_name": "credit-default-risk",
@@ -41,7 +41,7 @@ class TestRecordSchema:
         """The label must follow the threshold, never a hardcoded 0.5.
 
         This is the bug that shipped briefly in Phase 3: config carried the 0.5
-        placeholder while the trained threshold was 0.1011, so a patient scored
+        placeholder while the trained threshold was 0.2070, so an application scored
         above the model's own operating point was reported as not flagged.
         """
         assert _record(predicted_proba=0.12, decision_threshold=0.1011).predicted_label == 1

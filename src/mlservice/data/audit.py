@@ -198,7 +198,7 @@ def profile_subgroups(df: pd.DataFrame) -> dict[str, Any]:
     """Population counts per subgroup, before any modelling.
 
     Establishes which subgroups are large enough for Phase 2's performance
-    breakdown to say anything. A disparity computed on 40 patients is noise
+    breakdown to say anything. A disparity computed on 40 loans is noise
     presented as a finding.
     """
     out: dict[str, Any] = {}

@@ -114,7 +114,7 @@ class TestPredictContract:
         assert body["flagged"] is True
 
     def test_every_response_carries_the_disclaimer(self, client: Any) -> None:
-        """A JSON-only consumer must still be told this is not a clinical tool."""
+        """A JSON-only consumer must still be told this is not a lending tool."""
         body = client.post("/v1/predict", json={"features": EXAMPLE_FEATURES}).json()
         assert "NOT A CREDIT DECISIONING SYSTEM" in body["disclaimer"].upper()
 
@@ -148,15 +148,24 @@ class TestRequestIdPropagation:
 
 class TestErrorContract:
     def test_validation_error_names_the_field(self, client: Any) -> None:
-        bad = {**EXAMPLE_FEATURES, "time_in_hospital": 500}
+        """A BOUNDS violation on a real field, which is what this claims to test.
+
+        This sent `time_in_hospital: 500` — a field the credit schema has never
+        had — so `extra="forbid"` rejected it as unknown and the test passed
+        via the same path as `test_unknown_field_is_rejected` below. Two tests,
+        one code path, and the out-of-range branch untested.
+        """
+        bad = {**EXAMPLE_FEATURES, "fico_range_low": 5000}
         r = client.post("/v1/predict", json={"features": bad})
         assert r.status_code == 422
 
         body = r.json()
         assert body["title"] == "Validation failed"
         assert body["request_id"]
-        fields = [e["field"] for e in body["errors"]]
-        assert "features.time_in_hospital" in fields
+        errors = {e["field"]: e for e in body["errors"]}
+        assert "features.fico_range_low" in errors
+        # The constraint that was violated, not merely the field name.
+        assert "900" in str(errors["features.fico_range_low"].get("constraint", ""))
 
     def test_unknown_field_is_rejected(self, client: Any) -> None:
         """Silently ignoring it would let a caller believe it was used."""

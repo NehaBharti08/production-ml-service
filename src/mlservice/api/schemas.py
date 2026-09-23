@@ -12,11 +12,11 @@ Validation is strict on purpose:
     a version mismatch) and returning 422 tells them so. Silently ignoring it
     means they believe they sent a feature that was discarded.
 *   Numeric fields carry real bounds taken from the dataset, so a
-    ``time_in_hospital`` of 500 is rejected rather than scored.
+    ``fico_range_low`` of 5000 is rejected rather than scored.
 *   Categorical fields are **not** hard-restricted to observed values. The
     encoder handles unseen categories, and rejecting them would turn a
-    survivable degradation into an outage the first time a hospital adds a
-    specialty.
+    survivable degradation into an outage the first time the lender adds a
+    loan purpose.
 """
 
 from __future__ import annotations
@@ -283,7 +283,7 @@ class PredictionResponse(BaseModel):
     model: ModelInfo
     latency_ms: float
     #: Present in every prediction response, not only the docs. A consumer that
-    #: only ever sees JSON must still be told this is not a clinical tool.
+    #: only ever sees JSON must still be told this is not a lending tool.
     disclaimer: str
 
 

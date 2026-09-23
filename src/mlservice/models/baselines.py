@@ -4,7 +4,7 @@ Without these, "PR-AUC 0.22" is an uninterpretable number. With them it becomes
 "0.22 against a 0.11 prevalence floor", which is a claim someone can check.
 
 The majority-class baseline exists to make one point concrete: it scores ~89%
-accuracy while catching **zero** readmissions. Any project reporting accuracy on
+accuracy while catching **zero** defaults. Any project reporting accuracy on
 this task is reporting that number. Including it in the audit is the clearest
 possible argument for why PR-AUC is the headline metric here.
 """
@@ -130,9 +130,10 @@ def single_feature_heuristic(
     available for free at origination.
 
     A trained model that cannot beat *this* has not earned its deployment,
-    monitoring and retraining infrastructure. The medical equivalent was prior
-    inpatient visits; this one is stiffer, because a whole institution's
-    modelling effort is already baked into it.
+    monitoring and retraining infrastructure. This baseline is unusually stiff,
+    because a whole lender's underwriting effort is already baked into it: the
+    champion clears it by 0.0194 PR-AUC (0.2723 against 0.2529), and losing
+    `grade` alone would give the entire margin back.
     """
     score = df[feature].to_numpy(dtype=float)
     # Flag at the prevalence rate so the comparison is like-for-like.

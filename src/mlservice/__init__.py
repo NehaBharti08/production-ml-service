@@ -1,9 +1,10 @@
-"""Production ML service for 30-day hospital readmission risk.
+"""Production ML service for credit default risk.
 
-NOT FOR CLINICAL USE. This package is an engineering demonstration of ML
-operations — monitoring, drift detection, retraining and safe deployment —
-built on a public 1999-2008 research dataset. It has not been clinically
-validated, is not a medical device, and must never inform patient care.
+NOT A CREDIT DECISIONING SYSTEM. This package is an engineering demonstration
+of ML operations — monitoring, drift detection, retraining and safe deployment
+— built on a public 2007-2015 dataset from a single lender. It has not been
+validated for lending, has had no fair-lending or disparate-impact review, and
+must never decide anyone's access to credit or its price.
 """
 
 from __future__ import annotations

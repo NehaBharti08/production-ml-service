@@ -1,7 +1,7 @@
 """Calibration: reliability diagrams, Brier score, expected calibration error.
 
 Most portfolio projects never measure this. For a health-adjacent task it
-matters more than the point prediction: a model that ranks patients correctly
+matters more than the point prediction: a model that ranks borrowers correctly
 but outputs 0.4 where the true rate is 0.1 will misallocate any resource
 allocated on the magnitude of its score, while looking excellent on every
 ranking metric.
@@ -186,7 +186,7 @@ def plot_reliability(
     """Render reliability curves. Committed as an image for the model card.
 
     Bin sample counts are shown underneath because a calibration curve without
-    them is misleading: a wild deviation in a bin holding 12 patients reads as a
+    them is misleading: a wild deviation in a bin holding 12 loans reads as a
     serious defect when it is sampling noise.
     """
     import matplotlib

@@ -72,12 +72,12 @@ class TestFailFast:
 
     @pytest.mark.parametrize("bad", ["", "   ", "demo only"])
     def test_refuses_a_blanked_disclaimer(self, bad: str) -> None:
-        # The non-clinical disclaimer is a requirement of this project, not a
+        # The disclaimer is a requirement of this project, not a
         # label to be trimmed away for a cleaner API response.
         with pytest.raises(ValidationError, match="disclaimer"):
             Settings(api={"disclaimer": bad})  # type: ignore[arg-type]
 
-    def test_disclaimer_mentions_non_clinical_use(self) -> None:
+    def test_disclaimer_names_the_prohibited_use(self) -> None:
         assert "NOT A CREDIT DECISIONING SYSTEM" in get_settings().api.disclaimer.upper()
 
 

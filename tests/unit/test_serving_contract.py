@@ -12,7 +12,7 @@ that file did not exist and the API fell back to the config placeholder of 0.5
 against a model tuned to 0.1011.
 
 **Why nothing caught it.** Nothing raised. The service returned 200 with a
-plausible probability and ``flagged: false`` for every patient — because scores
+plausible probability and ``flagged: false`` for every application — because scores
 cluster near 0.1 and almost nothing clears 0.5. A screening model that never
 flags anyone, reporting itself perfectly healthy.
 

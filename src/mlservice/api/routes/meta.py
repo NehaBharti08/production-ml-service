@@ -49,7 +49,7 @@ async def model_metadata(store: ModelStore = Depends(get_store)) -> dict[str, An
         "api_version": settings.api.version,
         # Carried here as well as in every prediction response. A consumer
         # inspecting the service should not have to make a prediction to be told
-        # this is not a clinical tool.
+        # this is not a lending tool.
         "disclaimer": settings.api.disclaimer,
     }
 

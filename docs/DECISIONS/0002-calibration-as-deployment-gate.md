@@ -10,11 +10,15 @@ The standard portfolio treatment of a binary classifier is accuracy, maybe
 ROC-AUC, and a confusion matrix. Calibration — whether a predicted probability
 of 0.3 corresponds to a 30% observed event rate — is almost never measured.
 
-For a health-adjacent prediction task that omission is not cosmetic. A
-readmission risk score is only useful if the number means something. A model
-that ranks patients correctly but systematically outputs 0.4 where the true
-rate is 0.1 will misallocate any resource allocated on the basis of its
-magnitude, while looking excellent on every ranking metric.
+For credit that omission is not cosmetic — it is the whole business. Expected
+loss is probability of default x exposure x loss given default, so the
+probability *is* the price. A model that ranks borrowers correctly but
+systematically outputs 0.4 where the true rate is 0.1 misprices every loan it
+touches, while looking excellent on every ranking metric.
+
+That is why the gate blocks a challenger which ranks better and calibrates
+worse. In a domain where the number is consumed as a number, better ranking is
+not a sufficient reason to ship.
 
 ## Decision
 

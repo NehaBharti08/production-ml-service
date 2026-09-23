@@ -1,6 +1,6 @@
 ---
-title: Hospital Readmission Risk — Production ML Service
-emoji: 🏥
+title: Credit Default Risk — Production ML Service
+emoji: 📊
 colorFrom: blue
 colorTo: gray
 sdk: docker
@@ -9,14 +9,15 @@ pinned: false
 license: mit
 ---
 
-# Hospital Readmission Risk — live demo
+# Credit Default Risk — live demo
 
-> ## ⚠️ NOT FOR CLINICAL USE
+> ## ⚠️ NOT A CREDIT DECISIONING SYSTEM
 >
-> This is an **engineering demonstration of ML operations**, not a medical
-> device and not a clinical decision support tool. It is trained on a public
-> 1999–2008 hospital research dataset, has never been clinically validated, and
-> must never be used to inform patient care.
+> This is an **engineering demonstration of ML operations**, not an
+> underwriting tool. It is trained on a public 2007–2015 dataset from a single
+> lender, has never been validated for lending, has had no fair-lending or
+> disparate-impact review, and must never be used to decide anyone's access to
+> credit or its price.
 
 **Source:** https://github.com/NehaBharti08/production-ml-service
 

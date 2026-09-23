@@ -6,7 +6,7 @@ Two rules this module exists to enforce:
     Selective reporting is worse than no fairness analysis, because it implies a
     check that was not really performed.
 *   **Never report a subgroup too small to say anything.** A recall gap computed
-    on 40 patients is sampling noise presented as a finding, and it discredits
+    on 40 loans is sampling noise presented as a finding, and it discredits
     the gaps that are real.
 
 The disparity measure is deliberately *relative to the overall population*

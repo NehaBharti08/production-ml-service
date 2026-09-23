@@ -31,7 +31,7 @@ log = get_logger(__name__)
 
 #: Borrower identity is unavailable: Lending Club scrubbed ``member_id`` before
 #: release, and it is null for every row. The medical version could keep one
-#: encounter per patient and assert that nobody straddled the split; here that
+#: loan per borrower and assert that nobody straddled the split; here that
 #: is simply not possible.
 #:
 #: A borrower with two loans can therefore appear in both train and test, and

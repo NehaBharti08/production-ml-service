@@ -101,7 +101,7 @@ async def predict(
 
     # Note what is NOT logged here: no feature values. They are in the
     # prediction log, which is access-controlled as a data store; an aggregated
-    # application log is not the place for a patient record.
+    # application log is not the place for a borrower record.
     log.info(
         "prediction_served",
         prediction_id=record.prediction_id,

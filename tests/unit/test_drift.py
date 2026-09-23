@@ -74,7 +74,7 @@ class TestPSI:
         assert np.isfinite(psi)
 
     def test_degenerate_constant_feature_does_not_crash(self) -> None:
-        """number_emergency is 0 for most patients; quantile edges collapse."""
+        """delinq_2yrs is 0 for 82.7% of loans; quantile edges collapse."""
         a = pd.Series([0] * 1000)
         b = pd.Series([0] * 990 + [5] * 10)
         assert np.isfinite(null_calibration.population_stability_index(a, b))

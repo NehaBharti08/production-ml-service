@@ -54,10 +54,23 @@ class TestSpaceFrontmatter:
         assert served, "the CMD must read the port from ${PORT} with a default"
         assert int(served.group(1)) == declared
 
-    def test_carries_the_non_clinical_disclaimer(self) -> None:
+    def test_carries_the_disclaimer(self) -> None:
         """The disclaimer is required on every public surface, and a Space is
-        the most public one this project has."""
-        assert "NOT FOR CLINICAL USE" in SPACE_README.read_text(encoding="utf-8")
+        the most public one this project has.
+
+        The phrase is taken from the configured disclaimer rather than spelled
+        out here. Written out, it asserted "NOT FOR CLINICAL USE" for a full
+        domain change — passing the whole time, because the Space README had
+        not been migrated either. Two stale artifacts agreeing with each other
+        is not a test.
+        """
+        from mlservice.config import get_settings
+
+        phrase = get_settings().api.disclaimer.split(".")[0].strip().upper()
+        assert phrase, "the configured disclaimer must open with a headline phrase"
+        assert phrase in SPACE_README.read_text(encoding="utf-8").upper(), (
+            f"the Space README must carry the configured disclaimer: {phrase!r}"
+        )
 
 
 class TestModelPathContract:

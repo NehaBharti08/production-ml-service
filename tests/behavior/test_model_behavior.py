@@ -107,7 +107,7 @@ class TestInvariance:
         assert abs(first[1] - swapped[0]) < EXACT
 
     def test_batch_and_single_agree(self, model: Any) -> None:
-        """The two endpoints must not disagree about the same patient."""
+        """The two endpoints must not disagree about the same application."""
         row = LoanApplication(**EXAMPLE_FEATURES).to_model_row()
         assert abs(model.predict_proba(row) - model.predict_proba_batch([row])[0]) < EXACT
 

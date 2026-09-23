@@ -27,8 +27,9 @@ cannot be appended one line at a time. A monitoring substrate that can lose its
 last buffer on a crash is not one you can reason about during an incident.
 NDJSON is also greppable at 3am, which is worth more than disk.
 
-**Nullable outcome columns from day one.** A 30-day readmission label cannot
-exist at prediction time. Adding the columns later would make every earlier
+**Nullable outcome columns from day one.** A default label cannot exist at
+prediction time — a loan's outcome is not final until its term ends, 1,096 days
+for the 92.4% on a 36-month term. Adding the columns later would make every earlier
 record unjoinable.
 
 **Raw features, not transformed ones.** Drift must be measured in a space a human
@@ -81,9 +82,12 @@ prediction into a 500: losing a log line is a monitoring gap, failing the reques
 is an outage. Failures are counted in `prediction_log_writes_total{result="failed"}`
 so the gap is visible.
 
-**No PHI in application logs.** Feature values go to the prediction log, which is
-a data store; the aggregated application log gets IDs, scores and latencies only.
-An aggregated log shipper is the wrong place for a patient record.
+**No borrower identifiers in application logs.** Feature values go to the
+prediction log, which is a data store; the aggregated application log gets IDs,
+scores and latencies only. Identifiers and quasi-identifiers — `id`,
+`member_id`, `zip_code`, `emp_title`, `annual_inc` — are redacted, verified
+with a positive control rather than assumed. An aggregated log shipper is the
+wrong place for a borrower record.
 
 ## Revisit if
 

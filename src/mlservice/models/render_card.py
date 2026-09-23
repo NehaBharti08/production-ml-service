@@ -213,7 +213,7 @@ def render(summary: dict[str, Any], audit: dict[str, Any]) -> str:
     )
     add(
         f"**Read those numbers plainly.** To catch {champ['recall']:.0%} of "
-        f"readmissions the model flags {_pct(champ['flagged_rate'])} of all "
+        f"defaults the model flags {_pct(champ['flagged_rate'])} of all "
         f"loans, and {_pct(1 - champ['precision'])} of those flags are wrong. "
         f"It produces {champ['false_positives']:,} false alarms for "
         f"{champ['true_positives']:,} true ones. That is the real trade-off at "
@@ -334,17 +334,29 @@ def render(summary: dict[str, Any], audit: dict[str, Any]) -> str:
             max(eligible, key=lambda g: g["recall"]),
         )
 
-    for dimension, gloss in (
-        (
-            "race",
-            "The model misses a substantially larger share of readmissions in the lower group.",
+    # Driven by schema.SUBGROUP_DIMENSIONS, not by a list written out here.
+    #
+    # This loop spelled out ("race", "gender", "age") — dimensions that US
+    # credit data legally excludes and this dataset has never had. `spread()`
+    # returned None for each, the loop body never ran, and the model card
+    # silently lost this entire narrative section. Nothing failed, because a
+    # `continue` on missing data is indistinguishable from there being nothing
+    # to say.
+    #
+    # A dimension with no gloss still renders; the gloss adds interpretation,
+    # and its absence must not remove the finding.
+    glosses = {
+        "addr_state": (
+            "Geography is also a top-ten coefficient, so this spread falls on "
+            "something the model structurally relies on — which is precisely "
+            "the terrain fair-lending analysis governs."
         ),
-        ("gender", "The gap here is small relative to the other dimensions."),
-        (
-            "age",
-            "The model is markedly better in some states than others.",
-        ),
-    ):
+        "emp_length": "Employment length is a socioeconomic proxy, and is treated as one.",
+        "home_ownership": "Housing tenure correlates with wealth, not only with risk.",
+        "income_band": "The band is derived from stated income, which is self-reported.",
+    }
+    for dimension in schema.SUBGROUP_DIMENSIONS:
+        gloss = glosses.get(dimension, "")
         pair = spread(dimension)
         if not pair:
             continue

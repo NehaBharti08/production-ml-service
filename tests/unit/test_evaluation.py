@@ -150,7 +150,7 @@ class TestSubgroups:
     def test_small_groups_are_reported_but_not_analysed(
         self, frame: tuple[pd.DataFrame, np.ndarray, np.ndarray]
     ) -> None:
-        """A gap computed on 60 patients is noise presented as a finding."""
+        """A gap computed on 60 loans is noise presented as a finding."""
         df, y, score = frame
         report = subgroups.evaluate_subgroups(df, y, score, 0.15, ("race", "gender"))
         tiny = next(g for g in report.groups if g.group == "TinyGroup")
@@ -169,7 +169,7 @@ class TestSubgroups:
     def test_one_threshold_is_applied_to_every_group(
         self, frame: tuple[pd.DataFrame, np.ndarray, np.ndarray]
     ) -> None:
-        """Per-group thresholds would mean treating patients differently by
+        """Per-group thresholds would mean treating borrowers differently by
         demographics — the thing this analysis exists to detect."""
         df, y, score = frame
         report = subgroups.evaluate_subgroups(df, y, score, 0.15, ("race",))

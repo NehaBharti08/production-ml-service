@@ -89,7 +89,7 @@ class TestRealHttpBehaviour:
 
     def test_threshold_is_not_the_placeholder(self, http: Any) -> None:
         """Regression: the API once served config's 0.5 instead of the trained
-        0.1011, so a patient above the model's own operating point came back
+        0.2070, so an application above the model's own operating point came back
         unflagged. In-process tests used a stub threshold and could not have
         caught it."""
         _require_ready(http)
