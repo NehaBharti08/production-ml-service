@@ -27,7 +27,7 @@
 set -euo pipefail
 
 CLUSTER=mlservice
-DEPLOY=readmission-api
+DEPLOY=credit-risk-api
 URL=http://localhost:18080
 IMAGE_GOOD=mlservice-api:local
 

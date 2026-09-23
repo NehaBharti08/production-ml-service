@@ -86,7 +86,7 @@ The threshold (0.2070) was chosen **on validation** to reach 50.0% recall. On th
 | False positives | 30,562 |
 | False negatives | 12,449 |
 
-**Read those numbers plainly.** To catch 48% of readmissions the model flags 25.9% of all loans, and 72.8% of those flags are wrong. It produces 30,562 false alarms for 11,414 true ones. That is the real trade-off at this prevalence, and no threshold choice escapes it — it is a property of the problem, not a defect of the model.
+**Read those numbers plainly.** To catch 48% of defaults the model flags 25.9% of all loans, and 72.8% of those flags are wrong. It produces 30,562 false alarms for 11,414 true ones. That is the real trade-off at this prevalence, and no threshold choice escapes it — it is a property of the problem, not a defect of the model.
 Recall on test (0.478) also fell short of the validation target (0.512). A threshold tuned on one time period does not transfer perfectly to the next — which is precisely the behaviour the monitoring in Phase 6 exists to detect.
 
 ## Calibration

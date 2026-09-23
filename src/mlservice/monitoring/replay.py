@@ -4,11 +4,12 @@ This module can produce two very different things, and conflating them would be
 the most dishonest thing in the repository:
 
 **REAL drift** — replaying the held-out test split in chronological order. The
-1999–2008 period contains genuine practice change: `medical_specialty` recording
-rates shift, prescribing patterns move, and the 2007 rosiglitazone withdrawal
-appears as a sharp discontinuity at the 80th percentile of the ordering (Phase 1
-verified this against the dated event). Any drift detected here is real drift in
-real data.
+2007–2015 period contains genuine policy change: Lending Club repriced (mean
+`int_rate` moves 11.97% to 12.85% across one window boundary in late 2011),
+introduced whole-loan listing to institutional buyers (`initial_list_status`
+goes 0.7% to 22.2% in late 2012), and tightened income verification (`Not
+Verified` falls 58.4% to 32.8% in late 2010). Any drift detected here is real
+drift in real data.
 
 **INDUCED drift** — deliberately resampling a window to shift a distribution,
 so the detector has something unambiguous to catch. This is a demonstration, not
@@ -20,10 +21,16 @@ documentation says which is which. A monitoring demo that shows a detector
 firing without saying the drift was manufactured is claiming something it has
 not earned.
 
-The clock is compressed for the demo: label maturation is 30 days by definition,
-and waiting 30 real days to show a delayed-label join is not a demo. The
-compression is cosmetic — ordering and the *structure* of the delay are
-preserved, which is what the monitoring logic actually depends on.
+The clock is compressed for the demo. In credit a label does not mature in
+days: a loan's outcome is not final until its term ends, which is 1,096 days
+for the 92.4% of loans on a 36-month term and 1,826 for the rest. Waiting three
+years to show a delayed-label join is not a demo. The compression is cosmetic —
+ordering and the *structure* of the delay are preserved, which is what the
+monitoring logic actually depends on.
+
+That maturation lag is not merely inconvenient, and the honest consequence is
+recorded in configs/thresholds.yaml: a label-pipeline watchdog keyed to it
+cannot distinguish "the join broke" from "no loan has matured yet".
 """
 
 from __future__ import annotations
@@ -39,8 +46,9 @@ import numpy as np
 import pandas as pd
 
 from mlservice.config import get_settings, get_thresholds
-from mlservice.data import schema
+from mlservice.data import clean
 from mlservice.logging_ import get_logger
+from mlservice.monitoring.null_calibration import population_stability_index
 
 log = get_logger(__name__)
 
@@ -87,7 +95,7 @@ class ReplayWindow:
 def chronological_windows(
     frame: pd.DataFrame, window_rows: int | None = None
 ) -> list[ReplayWindow]:
-    """Split a frame into consecutive windows in ``encounter_id`` order.
+    """Split a frame into consecutive windows in ``issue_d`` order.
 
     No manipulation. Any drift detected across these is **real** — it is the
     dataset's own change over 2007–2015, across which Lending Club's book grew
@@ -96,7 +104,10 @@ def chronological_windows(
     config = get_thresholds().model_dump()["drift"]["alert"]["data_drift"]
     size = window_rows or config["window_size_rows"]
 
-    ordered = frame.sort_values(schema.TIME_COLUMN).reset_index(drop=True)
+    # Chronological, via the parsed date. Sorting the raw string column ordered
+    # the replay alphabetically by month name, so "real drift over 2007-2015"
+    # was drift between Apr and Aug of unrelated years.
+    ordered = clean.order_by_time(frame).reset_index(drop=True)
     windows: list[ReplayWindow] = []
     for i in range(0, len(ordered) - size + 1, size):
         chunk = ordered.iloc[i : i + size].copy()
@@ -116,7 +127,7 @@ def chronological_windows(
 
 def induce_grade_shift(
     window: pd.DataFrame,
-    target_grades: tuple[str, ...] = ("E", "F", "G"),
+    target_grades: tuple[str, ...] = ("D", "E", "F", "G"),
     weight: float = 4.0,
 ) -> tuple[pd.DataFrame, Manipulation]:
     """Over-sample low grades — a lender loosening its credit policy.
@@ -128,6 +139,14 @@ def induce_grade_shift(
     (grade_A at -0.78), so shifting it moves the input distribution **and** the
     score distribution together. That exercises data drift and prediction
     drift in one manipulation, which a synthetic column could not.
+
+    **The target set is D-G, not E-G.** At E-G this inducer tripled grade E and
+    moved PSI to 0.0388 — under the 0.10 threshold, so the deliberately drifted
+    windows came back *quiet* and the demonstration demonstrated nothing. E-G
+    is only 3.4% of the book, and no reweighting of a 3% tail moves the
+    population. D-G is the sub-prime shoulder and reaches PSI 0.2746 at the
+    same weight of 4.0 — the correction is to which grades count as
+    below-prime, not to the weight, which would be tuning until it passed.
     """
     before = window["grade"].value_counts(normalize=True).to_dict()
 
@@ -214,6 +233,38 @@ INDUCERS: dict[str, Callable[..., tuple[pd.DataFrame, Manipulation]]] = {
 }
 
 
+def _assert_actually_induced(
+    before: pd.DataFrame, after: pd.DataFrame, manipulation: Manipulation
+) -> None:
+    """An inducer that does not induce must fail, not pass quietly.
+
+    The grade inducer spent a domain change targeting a 3.4% tail: it ran, it
+    recorded a manipulation, the report said ``drift_origin: induced`` — and
+    the detector stayed under threshold, so the demo showed clean windows and
+    "drifted" windows behaving identically. Nothing in the pipeline objected,
+    because nothing checked that the manipulation had an effect.
+
+    Measured against the feature's own calibrated threshold, so this asks the
+    only question that matters: would the monitor we actually ship see it?
+    """
+    from mlservice.monitoring import drift as drift_mod
+
+    feature = manipulation.feature
+    threshold = drift_mod._feature_thresholds().get(feature)
+    if threshold is None:
+        return
+
+    psi = population_stability_index(before[feature], after[feature])
+    if psi <= threshold:
+        raise ValueError(
+            f"inducer '{manipulation.kind}' on {feature!r} moved PSI to only "
+            f"{psi:.4f}, at or under its {threshold:.4f} threshold — the "
+            "window would be reported as induced drift that the detector "
+            "cannot see. Strengthen the manipulation rather than shipping a "
+            "demonstration that demonstrates nothing."
+        )
+
+
 def induced_windows(
     frame: pd.DataFrame,
     inducer: str = "grade",
@@ -232,7 +283,7 @@ def induced_windows(
 
     config = get_thresholds().model_dump()["drift"]["alert"]["data_drift"]
     size = window_rows or config["window_size_rows"]
-    ordered = frame.sort_values(schema.TIME_COLUMN).reset_index(drop=True)
+    ordered = clean.order_by_time(frame).reset_index(drop=True)
 
     windows: list[ReplayWindow] = []
     total = clean_windows + drifted_windows
@@ -247,6 +298,7 @@ def induced_windows(
             windows.append(ReplayWindow(index=i, rows=len(chunk), drift_origin="real", frame=chunk))
         else:
             shifted, manipulation = INDUCERS[inducer](chunk)
+            _assert_actually_induced(chunk, shifted, manipulation)
             windows.append(
                 ReplayWindow(
                     index=i,

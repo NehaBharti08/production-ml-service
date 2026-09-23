@@ -17,14 +17,14 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: readmission-api
+  name: credit-risk-api
   labels:
-    app: readmission-api
+    app: credit-risk-api
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: readmission-api
+    name: credit-risk-api
   minReplicas: 2
   maxReplicas: 4 # a single-node kind cluster on a 15.6 GB machine
   metrics:

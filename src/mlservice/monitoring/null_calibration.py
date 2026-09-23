@@ -43,7 +43,7 @@ import numpy as np
 import pandas as pd
 
 from mlservice.config import PROJECT_ROOT, get_settings, get_thresholds
-from mlservice.data import schema
+from mlservice.data import clean, schema
 from mlservice.logging_ import get_logger
 
 log = get_logger(__name__)
@@ -184,7 +184,12 @@ def calibrate(
     # Ordered by issue date: the empirical null is the PSI between CONSECUTIVE
     # stable windows, so "consecutive" has to mean consecutive in time. Sorting
     # by anything else would measure churn between arbitrary groups.
-    ordered = reference.sort_values(schema.TIME_COLUMN).reset_index(drop=True)
+    #
+    # This line used to read `reference.sort_values(schema.TIME_COLUMN)`, and
+    # that column is a string, so it sorted Apr, Aug, Dec, Feb, Jan... Every
+    # threshold below was the churn between months that are adjacent in the
+    # ALPHABET. The comment above was right; the code under it was not.
+    ordered = clean.order_by_time(reference).reset_index(drop=True)
     window_rows = len(ordered) // n_windows
     if window_rows < 100:
         raise ValueError(

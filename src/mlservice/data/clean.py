@@ -65,6 +65,35 @@ def parse_issue_date(df: pd.DataFrame) -> pd.Series:
     )
 
 
+def order_by_time(frame: pd.DataFrame) -> pd.DataFrame:
+    """Sort rows chronologically. The only sanctioned way to do it.
+
+    ``issue_d`` is a **string** ("Dec-2018"), so ``sort_values(TIME_COLUMN)``
+    orders it alphabetically — Apr, Aug, Dec, Feb, Jan, Jul, Jun, Mar, May,
+    Nov, Oct, Sep — and the result looks chronological to every check short of
+    parsing it. Two monitoring modules did precisely that, which put all 64
+    drift thresholds and the whole replay on windows that were adjacent in the
+    alphabet rather than in time.
+
+    `chronological_split` never had the bug because it parsed first. The
+    difference was one line, in a codebase where three call sites needed the
+    same ordering — so the ordering lives here now, and the call sites cannot
+    choose the wrong one.
+    """
+    dates = parse_issue_date(frame)
+    if dates.isna().any():
+        raise ValueError(
+            f"{int(dates.isna().sum())} rows have an unparseable "
+            f"{get_settings().data.time_column}; ordering them by time would "
+            "silently place them wherever NaT happens to sort"
+        )
+    return (
+        frame.assign(_ordered_at=dates)
+        .sort_values("_ordered_at", kind="stable")
+        .drop(columns="_ordered_at")
+    )
+
+
 def parse_term_months(df: pd.DataFrame) -> pd.Series:
     """`` 36 months`` -> 36. Note the leading space in the raw data."""
     return pd.to_numeric(

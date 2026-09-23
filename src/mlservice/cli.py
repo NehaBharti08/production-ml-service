@@ -32,7 +32,7 @@ from mlservice.logging_ import configure_logging, get_logger, request_context
 
 app = typer.Typer(
     name="mlservice",
-    help="Readmission risk service — data, training, serving and monitoring.",
+    help="Credit default risk service — data, training, serving and monitoring.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -264,9 +264,12 @@ def monitor_replay(
     induce_drift: Annotated[
         bool, typer.Option("--induce-drift", help="Deliberately manipulate later windows.")
     ] = False,
-    inducer: Annotated[
-        str, typer.Option("--inducer", help="age | utilisation | specialty")
-    ] = "age",
+    # These named medical features until the domain changed, and the default
+    # "age" was not even a registered inducer — `--induce-drift` with no
+    # explicit choice raised before it did anything. replay.INDUCERS is the
+    # authority, and its error lists the valid names; this stays a plain string
+    # so the module keeps its lazy import.
+    inducer: Annotated[str, typer.Option("--inducer", help="grade | leverage | purpose")] = "grade",
     window_rows: Annotated[int | None, typer.Option("--window-rows")] = None,
 ) -> None:
     """Replay windows through the drift detectors.

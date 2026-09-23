@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from mlservice.data import clean, schema
 from mlservice.monitoring import drift, null_calibration, replay
 
 pytestmark = pytest.mark.unit
@@ -394,3 +395,60 @@ class TestMaturationSimulation:
         matured = replay.simulate_maturation(frame, np.linspace(0, 1, 100), fraction=0.6)
         assert len(matured) == 60
         assert matured["outcome_label"].tolist() == list(range(60))
+
+
+class TestChronologicalOrdering:
+    """The windows a drift threshold is derived from must be adjacent in TIME.
+
+    ``issue_d`` is a string ("Dec-2018"), so ``sort_values(TIME_COLUMN)`` sorts
+    it alphabetically and still returns a plausible-looking frame. That defect
+    shipped: every one of the 64 calibrated thresholds, and both replays, were
+    computed across windows adjacent in the alphabet.
+
+    Each test below carries a positive control asserting that the naive sort
+    really does produce a different answer on this fixture. Without it these
+    would keep passing if the ordering silently stopped mattering.
+    """
+
+    @staticmethod
+    def _out_of_alpha_order() -> pd.DataFrame:
+        # Chronological order here is Jan, Feb, Mar, Dec; alphabetical is
+        # Dec, Feb, Jan, Mar. Deliberately different.
+        return pd.DataFrame(
+            {
+                schema.TIME_COLUMN: ["Mar-2015", "Dec-2015", "Jan-2015", "Feb-2015"],
+                "marker": [3, 12, 1, 2],
+            }
+        )
+
+    def test_orders_by_date_not_by_string(self) -> None:
+        frame = self._out_of_alpha_order()
+
+        naive = frame.sort_values(schema.TIME_COLUMN)["marker"].tolist()
+        assert naive == [12, 2, 1, 3], "fixture no longer distinguishes the two sorts"
+
+        assert clean.order_by_time(frame)["marker"].tolist() == [1, 2, 3, 12]
+
+    def test_calibration_windows_advance_through_time(self) -> None:
+        """The end-to-end property, on the shape that actually broke."""
+        months = [f"{m}-{y}" for y in (2013, 2014, 2015) for m in _MONTHS]
+        frame = pd.DataFrame({schema.TIME_COLUMN: months * 50})
+
+        ordered = clean.order_by_time(frame).reset_index(drop=True)
+        as_dates = pd.to_datetime(ordered[schema.TIME_COLUMN], format="%b-%Y")
+        assert as_dates.is_monotonic_increasing
+
+        naive = pd.to_datetime(
+            frame.sort_values(schema.TIME_COLUMN)[schema.TIME_COLUMN], format="%b-%Y"
+        )
+        assert not naive.is_monotonic_increasing, "fixture no longer catches the bug"
+
+    def test_unparseable_dates_refuse_to_be_ordered(self) -> None:
+        """NaT sorts to one end, which would quietly relocate those rows into
+        the first or last window rather than failing."""
+        frame = pd.DataFrame({schema.TIME_COLUMN: ["Jan-2015", "not-a-date"]})
+        with pytest.raises(ValueError, match="unparseable"):
+            clean.order_by_time(frame)
+
+
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")

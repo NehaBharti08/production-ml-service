@@ -445,8 +445,8 @@ def model_health(_t: dict[str, Any]) -> dict[str, Any]:
             _steps((None, TEXT)),
             {"h": 5, "w": 6, "x": 12, "y": 0},
             3,
-            "Share of patients above the decision threshold. This is what drives "
-            "downstream workload — measured at ~32% on the test split.",
+            "Share of applications above the decision threshold. This is what "
+            "drives downstream workload — measured at 25.9% on the test split.",
             decimals=3,
         )
     )

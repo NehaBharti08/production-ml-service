@@ -140,7 +140,7 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: data/raw
-          key: uci-diabetes-${{ hashFiles('data/checksums.txt') }}
+          key: lendingclub-${{ hashFiles('data/checksums.txt') }}
 
       - name: Download and verify dataset
         run: uv run mlservice data download

@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 
 from mlservice.config import get_settings, get_thresholds
-from mlservice.data import schema
+from mlservice.data import clean, schema
 from mlservice.logging_ import get_logger
 from mlservice.monitoring.null_calibration import population_stability_index
 
@@ -101,6 +101,20 @@ def _feature_thresholds() -> dict[str, float]:
     return thresholds
 
 
+def _not_monitored() -> dict[str, str]:
+    """Features deliberately excluded from drift detection, name -> reason.
+
+    Kept out of the calibrated block on purpose: `monitor calibrate` rewrites
+    `per_feature`, and an exclusion must survive that, because it encodes a
+    reason rather than a measurement.
+    """
+    config = get_thresholds().model_dump()["drift"].get("not_monitored") or {}
+    features: dict[str, Any] = config.get("features") or {}
+    return {
+        name: (body or {}).get("reason", "no reason recorded") for name, body in features.items()
+    }
+
+
 def detect_data_drift(
     reference: pd.DataFrame, current: pd.DataFrame, thresholds: dict[str, float] | None = None
 ) -> list[FeatureDrift]:
@@ -108,14 +122,18 @@ def detect_data_drift(
 
     Each feature is compared against **its own** calibrated threshold, not a
     shared constant. Measured in Phase 6: a uniform 0.10 would have flagged
-    ``medical_specialty`` in 11 of 19 windows already accepted as stable,
-    because its median churn (0.1196) is above the conventional bar.
+    ``int_rate`` in 4 of the 19 window pairs already accepted as stable, and
+    ``verification_status`` in 3 — while those features' *median* churn is
+    0.0331 and 0.0170, far under the conventional bar. They are flat with
+    occasional step changes, so one constant either pages on the steps or
+    sleeps through everything else.
     """
     thresholds = thresholds if thresholds is not None else _feature_thresholds()
+    excluded = _not_monitored()
     features = [
         c
         for c in (*schema.NUMERIC_FEATURES, *schema.CATEGORICAL_FEATURES)
-        if c in reference.columns and c in current.columns
+        if c in reference.columns and c in current.columns and c not in excluded
     ]
 
     results: list[FeatureDrift] = []
@@ -268,6 +286,17 @@ def detect_label_drift(
     }
 
 
+def _window_bounds(current: pd.DataFrame) -> tuple[str, str]:
+    """Earliest and latest month in the window, by date rather than by spelling."""
+    if schema.TIME_COLUMN not in current.columns:
+        return "", ""
+    dates = clean.parse_issue_date(current)
+    if dates.isna().all():
+        return "", ""
+    raw = current[schema.TIME_COLUMN]
+    return str(raw.loc[dates.idxmin()]), str(raw.loc[dates.idxmax()])
+
+
 def analyse_window(
     reference: pd.DataFrame,
     current: pd.DataFrame,
@@ -299,15 +328,22 @@ def analyse_window(
             "minimum — PSI is unstable at this size and results are indicative only"
         )
 
+    # An excluded feature is announced in every report that omits it. A
+    # monitored set that quietly shrinks is how a blind spot becomes permanent.
+    for name, reason in sorted(_not_monitored().items()):
+        notes.append(f"NOT MONITORED: {name} — {' '.join(reason.split())}")
+
+    start, end = _window_bounds(current)
+
     report = DriftReport(
         # Real dates now, not an ID proxy — so a drift report says WHEN the
         # window was rather than merely where it sat in an ordering.
-        window_start=(
-            str(current[schema.TIME_COLUMN].min()) if schema.TIME_COLUMN in current.columns else ""
-        ),
-        window_end=(
-            str(current[schema.TIME_COLUMN].max()) if schema.TIME_COLUMN in current.columns else ""
-        ),
+        #
+        # Taken from the PARSED date. `issue_d` is a string, so .min()/.max()
+        # on it returned the alphabetically first and last month — "Apr-2015"
+        # for a window that began in July.
+        window_start=start,
+        window_end=end,
         window_rows=len(current),
         reference_rows=len(reference),
         feature_schema_hash=cur_hash,

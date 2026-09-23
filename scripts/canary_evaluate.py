@@ -14,8 +14,36 @@ import urllib.request
 from pathlib import Path
 
 URL = "http://127.0.0.1:18080/v1/predict"
-CANARY_THRESHOLD = 0.15
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 400
+
+
+# Read the operating points from the artifacts the cluster actually mounts,
+# rather than hardcoding them here.
+#
+# This was a literal `CANARY_THRESHOLD = 0.15`, and a hardcoded serving
+# constant is the bug that has bitten this project more than any other. When
+# the domain changed, the champion moved to 0.2070 and a stale constant here
+# would have silently labelled every response "stable" — see the empty-track
+# guard below for what that produces.
+def _threshold(track: str) -> float:
+    meta = Path("models") / track / "metadata.json"
+    if not meta.is_file():
+        sys.exit(
+            f"  no {meta} — the {track} artifact must be on disk, since it is "
+            "the same file the cluster mounts and its threshold is how "
+            "responses are attributed"
+        )
+    return round(json.loads(meta.read_text(encoding="utf-8"))["champion_threshold"], 4)
+
+
+STABLE_THRESHOLD = _threshold("champion")
+CANARY_THRESHOLD = _threshold("canary")
+if STABLE_THRESHOLD == CANARY_THRESHOLD:
+    sys.exit(
+        f"  both tracks serve threshold {CANARY_THRESHOLD} — attribution is by "
+        "operating point, so identical thresholds make the split unmeasurable"
+    )
+print(f"  stable {STABLE_THRESHOLD}  canary {CANARY_THRESHOLD}")
 
 payload = Path("payload_varied.json").read_bytes()
 records = json.loads(payload)
@@ -44,7 +72,7 @@ for i in range(N):
     who = "canary" if abs(threshold - CANARY_THRESHOLD) < 1e-9 else "stable"
     counts[who] += 1
     latency[who].append(elapsed)
-    proba[who].append(result["readmission_probability"])
+    proba[who].append(result["default_probability"])
     if result["flagged"]:
         flagged[who] += 1
 
@@ -73,9 +101,21 @@ SLO_P99_MS = 700.0
 PAGE_5XX = 0.01
 
 verdicts = []
+
+# An evaluation that saw no canary traffic has not found the canary healthy —
+# it has found nothing. The original wrote its verdicts inside `if "canary" in
+# stats`, so zero canary responses produced an empty verdict list and the
+# success message below, reporting a clean bill of health on a canary it never
+# reached. Same shape as a rollback check that promotes the version already
+# serving: a result that cannot fail is not a result.
+for track in ("stable", "canary"):
+    if track not in stats:
+        print(f"    FAIL  no {track} traffic observed — nothing was evaluated")
+        sys.exit(2)
+
 if "canary" in stats:
     c = stats["canary"]
-    s = stats.get("stable", c)
+    s = stats["stable"]
 
     ok_latency = c["p99"] <= SLO_P99_MS
     verdicts.append(

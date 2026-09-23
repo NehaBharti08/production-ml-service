@@ -34,7 +34,7 @@ concurrency:
 
 env:
   # Overridable at dispatch; this is the default target.
-  SPACE_ID: ${{ inputs.space_id || 'NehaBharti08/readmission-risk-service' }}
+  SPACE_ID: ${{ inputs.space_id || 'nehabharti0802/credit-default-risk-service' }}
 
 jobs:
   deploy:
