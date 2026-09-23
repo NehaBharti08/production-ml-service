@@ -55,7 +55,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Traffic"
         }
       ],
       "options": {
@@ -116,7 +117,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Latency p99"
         }
       ],
       "options": {
@@ -181,7 +183,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Error rate (5xx)"
         }
       ],
       "options": {
@@ -246,7 +249,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Saturation"
         }
       ],
       "options": {

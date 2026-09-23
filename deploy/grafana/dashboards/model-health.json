@@ -55,7 +55,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Model loaded"
         }
       ],
       "options": {
@@ -116,7 +117,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Predictions / sec"
         }
       ],
       "options": {
@@ -173,7 +175,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Flagged rate"
         }
       ],
       "options": {
@@ -230,7 +233,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Outcomes recorded"
         }
       ],
       "options": {

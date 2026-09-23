@@ -72,6 +72,14 @@ def stat(
     ``textMode: value_and_name`` is deliberate: the tile shows the number *and*
     what it measures, so the colour is never the only signal. A bare coloured
     square communicates nothing to someone who has not memorised the layout.
+
+    The "name" Grafana prints is the **series** name, not this panel's title,
+    so without a legendFormat the tile rendered its own PromQL back at the
+    reader — ``drift_features_breaching{component="monitoring-job",
+    instance="node-exporter:9100", job="drift-textfile"}`` above the number.
+    That is the opposite of the intent above, and it was visible in every
+    dashboard capture. Naming the series after the panel is what makes
+    value_and_name mean what the docstring says.
     """
     return {
         "type": "stat",
@@ -80,7 +88,7 @@ def stat(
         "description": description,
         "datasource": DATASOURCE,
         "gridPos": grid,
-        "targets": [{"expr": expr, "refId": "A", "datasource": DATASOURCE}],
+        "targets": [{"expr": expr, "refId": "A", "datasource": DATASOURCE, "legendFormat": title}],
         "options": {
             "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
             "orientation": "auto",
