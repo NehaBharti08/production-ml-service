@@ -328,7 +328,12 @@ def monitor_check() -> None:
     from mlservice.monitoring import reports as reports_mod
 
     with request_context():
-        records = prediction_log.read_records()
+        # join_outcomes, not read_records: the observed labels live in a second
+        # file and are joined on prediction_id. Reading only the predictions
+        # meant `outcome_label` was never present, so the label-drift branch
+        # could not run and the rolling PR-AUC panel had no source — on a
+        # dashboard whose purpose is to show whether the model is still good.
+        records = prediction_log.join_outcomes()
         if not records:
             typer.secho(
                 "  note  prediction log is empty — nothing to check", fg=typer.colors.YELLOW
@@ -337,9 +342,71 @@ def monitor_check() -> None:
 
         import pandas as pd
 
-        frame = pd.DataFrame([r["features_raw"] for r in records])
         reference = reports_mod.load_reference()
-        report = drift_mod.analyse_window(reference=reference, current=frame)
+        reference_hash = str(reference.attrs.get("feature_schema_hash", "unknown"))
+
+        # Keep only records written under the reference's feature schema.
+        #
+        # This used to be `pd.DataFrame([r["features_raw"] for r in records])`
+        # over the WHOLE log, and the hash each record carries was dropped on
+        # the floor. After the domain change the log held 3,127 readmission
+        # records beside 1,451 credit ones, so every categorical was compared
+        # against categories it had never seen and PSI pinned at its ~10 cap on
+        # all nine of them. The report called that drift.
+        #
+        # prediction_log's own docstring promises this hash is stored per
+        # record so "the drift report" cannot "silently lie". It was stored.
+        # Nothing read it.
+        usable = [r for r in records if r.get("feature_schema_hash") == reference_hash]
+        skipped = len(records) - len(usable)
+        if skipped:
+            typer.secho(
+                f"  note  {skipped} of {len(records)} records were written under a "
+                f"different feature schema and are not comparable — excluded",
+                fg=typer.colors.YELLOW,
+            )
+        if not usable:
+            typer.secho(
+                f"  FAIL  no records match the reference schema {reference_hash}. "
+                "Comparing across a schema change is meaningless, so there is "
+                "nothing to report rather than something misleading.",
+                fg=typer.colors.RED,
+                bold=True,
+            )
+            raise typer.Exit(code=1)
+
+        # The most recent window, which is what this command claims to analyse.
+        # It previously took every record ever logged, so the "window" grew
+        # without bound and old traffic diluted anything recent.
+        window_rows = get_thresholds().model_dump()["drift"]["alert"]["data_drift"][
+            "window_size_rows"
+        ]
+        window = usable[-window_rows:]
+
+        frame = pd.DataFrame([r["features_raw"] for r in window])
+        # Stamped from the records themselves. analyse_window defaults a
+        # missing hash to the reference's, which makes `comparable` true
+        # whatever the window holds — a guard whose default is "pass".
+        frame.attrs["feature_schema_hash"] = reference_hash
+
+        matured = pd.DataFrame(
+            [
+                {
+                    "outcome_label": r["outcome_label"],
+                    "predicted_proba": r["predicted_proba"],
+                    "outcome_timestamp": r.get("outcome_timestamp"),
+                }
+                for r in window
+                if r.get("outcome_label") is not None
+            ]
+        )
+
+        report = drift_mod.analyse_window(
+            reference=reference,
+            current=frame,
+            matured=matured,
+            baseline_pr_auc=reports_mod.baseline_pr_auc(),
+        )
         path = drift_mod.save_report(report)
         reports_mod.export_to_prometheus(report)
 

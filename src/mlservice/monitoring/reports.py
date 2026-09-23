@@ -193,6 +193,22 @@ def export_to_prometheus(report: drift_mod.DriftReport | None) -> Path | None:
             f"rolling_pr_auc {report.labels['observed_pr_auc']:.6f}",
         ]
 
+    # The label-pipeline watchdog. The drift dashboard has always charted
+    # `(time() - drift_last_matured_label_timestamp) / 3600`, and this exporter
+    # never wrote that series — so the one panel whose job is to notice that
+    # labels stopped arriving could not have noticed anything.
+    #
+    # Written unconditionally, including when no label has ever arrived: the
+    # watchdog's whole purpose is to fire in that case, and a gauge that only
+    # appears once labels exist cannot report their absence. 0 is a real
+    # timestamp here, and it renders as an enormous age, which is correct.
+    last_matured = float(report.labels.get("last_matured_timestamp") or 0.0)
+    lines += [
+        "# HELP drift_last_matured_label_timestamp Unix time of the most recent matured label.",
+        "# TYPE drift_last_matured_label_timestamp gauge",
+        f"drift_last_matured_label_timestamp {last_matured:.0f}",
+    ]
+
     target.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     log.info("drift_metrics_exported", path=str(target), n_features=len(report.features))
     return target

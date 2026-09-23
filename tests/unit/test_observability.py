@@ -254,3 +254,34 @@ class TestDashboards:
                     assert "custom.axisPlacement" not in props, (
                         f"{name}/{panel.get('title')} appears to use a second axis"
                     )
+
+
+class TestValidationErrorCardinality:
+    """The `field` label must not grow with batch size.
+
+    A malformed batch of 20 produced one series per (item index, field), and
+    seeding a dashboard once created 281 series on this counter. Prometheus
+    label values have to be bounded by the schema, not by the payload.
+    """
+
+    def test_batch_indices_collapse(self) -> None:
+        from mlservice.api.errors import _metric_field
+
+        assert _metric_field("items.7.loan_amnt") == "items.[].loan_amnt"
+        assert _metric_field("items.0.loan_amnt") == _metric_field("items.19.loan_amnt")
+
+    def test_single_request_fields_are_untouched(self) -> None:
+        from mlservice.api.errors import _metric_field
+
+        assert _metric_field("features.fico_range_low") == "features.fico_range_low"
+        assert _metric_field("(request)") == "(request)"
+
+    def test_label_count_is_bounded_by_the_schema(self) -> None:
+        """The property, stated directly: batch size must not change the count."""
+        from mlservice.api.errors import _metric_field
+
+        fields = ("loan_amnt", "int_rate", "grade")
+        small = {_metric_field(f"items.{i}.{f}") for i in range(3) for f in fields}
+        large = {_metric_field(f"items.{i}.{f}") for i in range(200) for f in fields}
+        assert small == large
+        assert len(large) == len(fields)

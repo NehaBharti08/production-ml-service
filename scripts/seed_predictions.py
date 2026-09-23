@@ -65,6 +65,7 @@ def main() -> int:
 
     delay = 1.0 / args.rps if args.rps > 0 else 0.0
     codes: dict[int, int] = {}
+    by_endpoint: dict[str, dict[int, int]] = {"single": {}, "batch": {}}
     latencies: list[float] = []
 
     for i in range(args.n):
@@ -73,10 +74,23 @@ def main() -> int:
         if random.random() < args.invalid_rate:
             # A field-specific violation, so validation_errors_total{field=...}
             # has a real value to render.
-            record["time_in_hospital"] = -5 if random.random() < 0.5 else "not-a-number"
+            #
+            # It must be a violation on a field that EXISTS. This set
+            # `time_in_hospital`, which the credit schema has never had, so
+            # `extra="forbid"` rejected it as an unexpected field — still a
+            # 422, but labelled with a field name that appears nowhere in the
+            # API. The panel exists to tell "one field is being sent wrong"
+            # apart from "this caller is sending junk", and an unknown-field
+            # label answers neither.
+            #
+            # fico_range_low is bounded [300, 900], so -5 is out of range and
+            # the string is a type error — the two shapes a real caller bug
+            # actually takes.
+            record["fico_range_low"] = -5 if random.random() < 0.5 else "not-a-number"
 
         code, ms = _post(f"{args.url}/v1/predict", {"features": record})
         codes[code] = codes.get(code, 0) + 1
+        by_endpoint["single"][code] = by_endpoint["single"].get(code, 0) + 1
         latencies.append(ms)
 
         if (i + 1) % 100 == 0:
@@ -86,10 +100,14 @@ def main() -> int:
 
     for _ in range(args.batches):
         batch = [dict(random.choice(records)) for _ in range(args.batch_size)]
-        code, ms = _post(
-            f"{args.url}/v1/predict/batch", {"items": [{"features": r} for r in batch]}
-        )
+        # `items` is a flat list of applications. Wrapping each one in
+        # {"features": ...} — the shape the SINGLE endpoint takes — made every
+        # batch request a 422, so the batch panels were empty in every
+        # dashboard capture and the seeder reported success anyway, because it
+        # only checks that some 200 was seen.
+        code, ms = _post(f"{args.url}/v1/predict/batch", {"items": batch})
         codes[code] = codes.get(code, 0) + 1
+        by_endpoint["batch"][code] = by_endpoint["batch"].get(code, 0) + 1
         latencies.append(ms)
 
     latencies.sort()
@@ -102,7 +120,17 @@ def main() -> int:
     print(f"  p50 {pct(0.50):7.1f} ms")
     print(f"  p95 {pct(0.95):7.1f} ms")
     print(f"  p99 {pct(0.99):7.1f} ms")
-    return 0 if codes.get(200, 0) > 0 else 1
+    # Every endpoint must have succeeded, not merely one of them. The old
+    # check was `any 200 anywhere`, and under it the batch endpoint returned
+    # 422 on all 15 requests while this script exited 0 and the operator went
+    # on to screenshot empty batch panels.
+    failed = [name for name, seen in by_endpoint.items() if seen and not seen.get(200)]
+    for name, seen in by_endpoint.items():
+        print(f"  {name:7s} {dict(sorted(seen.items()))}")
+    if failed:
+        print(f"  FAIL  no successful response from: {', '.join(sorted(failed))}")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

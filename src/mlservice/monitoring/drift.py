@@ -314,9 +314,21 @@ def analyse_window(
     # compares distributions that are not comparable, and the report would
     # silently lie rather than refuse.
     ref_hash = str(reference.attrs.get("feature_schema_hash", "unknown"))
-    cur_hash = str(current.attrs.get("feature_schema_hash", ref_hash))
+
+    # An unstamped window defaulted to the REFERENCE's hash, so `comparable`
+    # came back true no matter what the window contained. Every caller that
+    # forgot to stamp the frame got a guarantee it had not earned — including
+    # `monitor check`, which was comparing readmission records against a credit
+    # reference and reporting the result as drift.
+    cur_hash = str(current.attrs.get("feature_schema_hash", "unstamped"))
     comparable = ref_hash == cur_hash
-    if not comparable:
+    if cur_hash == "unstamped":
+        notes.append(
+            "UNVERIFIABLE: the current window carries no feature_schema_hash, so "
+            "it cannot be shown comparable to the reference. Numbers below are "
+            "indicative only."
+        )
+    elif not comparable:
         notes.append(
             f"SCHEMA MISMATCH: reference {ref_hash} vs current {cur_hash}. "
             "Drift numbers below are not comparable and must not be acted on."
@@ -365,6 +377,15 @@ def analyse_window(
 
     if matured is not None and baseline_pr_auc is not None:
         report.labels = detect_label_drift(matured, baseline_pr_auc)
+
+    # Recorded whatever detect_label_drift concluded, including when it refused
+    # for want of labels. The watchdog asks "when did a label last arrive",
+    # which is exactly the question that matters most when the answer is
+    # "not recently" — so it cannot live on the sufficient-labels branch.
+    if matured is not None and "outcome_timestamp" in getattr(matured, "columns", []):
+        stamps = pd.to_datetime(matured["outcome_timestamp"], errors="coerce", utc=True).dropna()
+        if len(stamps):
+            report.labels["last_matured_timestamp"] = stamps.max().timestamp()
 
     log.info(
         "drift_window_analysed",

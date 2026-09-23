@@ -155,7 +155,7 @@
       "type": "stat",
       "id": 3,
       "title": "Flagged rate",
-      "description": "Share of patients above the decision threshold. This is what drives downstream workload \u2014 measured at ~32% on the test split.",
+      "description": "Share of applications above the decision threshold. This is what drives downstream workload \u2014 measured at 25.9% on the test split.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
