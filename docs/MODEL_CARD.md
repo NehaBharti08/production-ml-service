@@ -69,7 +69,7 @@ PR-AUC is the headline. At a 14.71% positive rate ROC-AUC is dominated by the la
 | `int_rate` heuristic — the lender's own priced risk | 0.2529 | [0.2486, 0.2575] |
 | **This model** | **0.2723** | [0.2676, 0.2769] |
 
-The intervals **do not overlap**, so the model has demonstrably beaten a one-feature heuristic available at admission with no model at all. That was the bar for justifying the serving, monitoring and retraining infrastructure.
+The intervals **do not overlap**, so the model has demonstrably beaten the lender's own priced risk, available at origination with no model of ours at all. That was the bar for justifying the serving, monitoring and retraining infrastructure.
 For contrast, the majority-class baseline scores **85.3% accuracy with 0% recall.** This is why accuracy is not reported as a headline metric.
 
 ## Operating point, stated honestly

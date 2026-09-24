@@ -152,11 +152,19 @@ groups:
           runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#latency-spike"
 
       - alert: ApproachingSaturation
-        # The load test measured the knee at ~52 req/s: past it, throughput
-        # INVERTS and latency rises 3.8x. 80% of the knee (~42 req/s) gives
-        # warning before the service enters that regime.
+        # The credit service plateaus at ~36 req/s; past that, requests queue
+        # and latency climbs with no gain in throughput. 80% of the knee
+        # (~29 req/s) gives warning before the service enters that regime.
         # thresholds.yaml: slo.latency.measured_knee_rps (MEASURED)
-        expr: sum(rate(http_requests_total[5m])) > 42
+        #
+        # This fired at 42 — 80% of the MEDICAL service's 52 req/s knee — for
+        # the whole credit migration. The credit service could never reach 42:
+        # it saturated at ~20 req/s before the QuantileTransformer fix and ~36
+        # after. An alert set above the maximum achievable rate cannot fire,
+        # and a capacity alert that cannot fire looks exactly like a service
+        # with plenty of headroom. test_saturation_alert_sits_below_the_measured_knee
+        # caught it the moment the re-measured knee reached config.
+        expr: sum(rate(http_requests_total[5m])) > 29
         for: 10m
         labels:
           severity: ticket
@@ -165,9 +173,8 @@ groups:
           summary: "Request rate approaching measured saturation"
           description: >-
             {{ $value | printf "%.1f" }} req/s, against a measured knee of
-            ~52 req/s where throughput inverts. Scale out before crossing it —
-            past the knee, adding load makes the service slower AND less
-            productive.
+            ~36 req/s. Scale out before crossing it — past the knee, added load
+            only queues, so latency rises with no gain in throughput.
           runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#latency-spike"
 
   # ===========================================================================

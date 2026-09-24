@@ -211,26 +211,175 @@ already serving and reported `promote 2 → 2, VERIFIED: True`. A verification
 that cannot fail is decoration. See
 [ADR 0008](docs/DECISIONS/0008-promotion-gates-and-rollback.md).
 
-### Drift thresholds are measured, and they found something
+### Drift thresholds are measured, and they caught our own pipeline
 
 Each of the 64 per-feature thresholds is the **99th percentile of that feature's
 PSI between consecutive stable training windows**, clamped to [0.10, 0.25].
 
-That calibration produced a finding. Three features hit the ceiling:
+Getting that right took two attempts, and the first failure is the more
+instructive one. `issue_d` is a date stored as a **string** (`"Dec-2018"`), so
+sorting it ordered the windows *alphabetically* — Apr, Aug, Dec, Feb, Jan — and
+every threshold was the churn between months adjacent in the alphabet. Nothing
+failed. The numbers were plausible, the dashboards were green, and the defect
+was only provable by reproducing the recorded PSI values from a lexicographic
+sort. Ordering now goes through one function that parses first, and three call
+sites can no longer choose the wrong one.
 
-| Feature | Measured p99 churn |
+Corrected, four features hit the ceiling — and the interesting column is the
+median, not the p99:
+
+| Feature | Median churn | p99 churn | What it is |
+|:--|--:|--:|:--|
+| `initial_list_status` | 0.0069 | 0.6726 | whole-loan listing introduced, late 2012 |
+| `term` | 0.0016 | 0.6169 | **our own maturity rule** |
+| `int_rate` | 0.0331 | 0.3339 | repricing, late 2011 |
+| `verification_status` | 0.0170 | 0.2644 | income verification tightened, late 2010 |
+
+These features are not "volatile". They are **flat, with one step change each**
+— which is what a policy change looks like, and what alphabetical adjacency had
+smeared into uniform noise. A single generic threshold either pages on every
+step or sleeps through everything else.
+
+**One of the four is not the lender. It is us.** The maturity rule
+(`issue_d + term <= observation_end`) censors by term, so 60-month loans stop
+at 2013-11 while 36-month loans run to 2015-12. Training data is 13.19%
+60-month; every 2015 window is structurally 0.00%. The monitor reported PSI
+**1.5738 on `term` in all 32 replay windows** — the identical value every time,
+because the gap is fixed by the pipeline rather than by the world.
+
+A permanent alarm carries no information, and this one was actively harmful:
+`int_rate`'s genuine 2014-to-2015 repricing was sitting underneath it. `term`
+is now excluded from monitoring with its reason, measurement and revisit
+condition recorded in config, and every report that omits it says so.
+
+The cost is stated rather than buried: **the model is trained on 60-month loans
+and evaluated on a split containing none of them**, so its behaviour on the
+longer term is unvalidated. See
+[ADR 0007](docs/DECISIONS/0007-drift-thresholds.md) and
+[ADR 0010](docs/DECISIONS/0010-term-censoring.md).
+
+---
+
+## It is observable, and the dashboards are real
+
+Three dashboards, generated from `configs/thresholds.yaml` so a panel's red
+band cannot drift away from the SLO it represents. Captured through Grafana's
+render API rather than by hand — a screenshot taken manually cannot be
+reproduced, and the previous set went stale through a whole domain change
+without anything noticing.
+
+![Golden signals](docs/images/golden-signals.png)
+
+Traffic, latency, errors, saturation — the four questions, answerable in ten
+seconds, with the detail below for anyone who wants it.
+
+![Model health](docs/images/model-health.png)
+
+![Drift](docs/images/drift.png)
+
+**All 20 panels carry data, and that was verified by running each panel's own
+PromQL against Prometheus** rather than by looking at the pictures. That check
+is why the drift board above exists at all: all four of its panels had *never*
+rendered a value. The monitoring job wrote its metrics to a textfile for a
+collector that was not in the stack, and one panel queried a metric nothing had
+ever written. The dashboard was built in Phase 5 against a metric contract that
+Phase 6 then failed to honour, and being generated from config made it look
+finished.
+
+---
+
+## A bad deploy is contained, not caught
+
+```console
+$ bash scripts/k8s_rollback_demo.sh
+
+==> 5. Watch the rollout fail to progress
+error: timed out waiting for the condition
+    rollout stalled, as intended: the new pod never became Ready
+
+NAME                               READY   STATUS    RESTARTS
+credit-risk-api-556d8c5bf6-j8bwn   1/1     Running   0
+credit-risk-api-556d8c5bf6-kqksm   1/1     Running   0
+credit-risk-api-c5bfccbdf-dx4gp    0/1     Running   0     <-- broken, never Ready
+
+==> 6. Traffic is still served by the old ReplicaSet
+    12/12 probes returned 200 DURING the failed rollout
+```
+
+The broken pod has **zero restarts**. Liveness asks "is the process alive" and
+it is; readiness asks "can it serve" and it cannot, so the pod never enters the
+Service endpoints. Wire liveness to a readiness-style check and this becomes a
+crash loop — a blocked rollout that looks like an outage.
+
+The rollout timing out *is* the containment working.
+
+---
+
+## The canary changed the decision, not the score
+
+Nine stable replicas beside one canary gives 1-in-10 through a single Service.
+The canary serves a different operating point (0.15 against the champion's
+0.2070), so every response says which version produced it — no service mesh
+required.
+
+```console
+  track         n   share   flagged   mean p   p99 ms
+  stable      364   91.0%     23.9%   0.1427     83.2
+  canary       36    9.0%     50.0%   0.1432    146.5
+
+    FAIL  flagged-rate drift vs stable   23.9% -> 50.0% (+26.1 pts, limit +/-10)
+  VERDICT: BREACH -> roll the canary back
+```
+
+**Read the two middle columns together.** Mean predicted probability is
+identical to three decimals, because the weights *are* identical. The flagged
+rate doubles. A monitor watching the score distribution would have seen
+nothing at all — and the quantity that moved is the one a human feels as
+workload, or that a borrower feels as a declined application.
+
+**The first run measured 23% against a configured 10%**, because an HPA
+clamped the stable deployment back to its `maxReplicas: 4` seven seconds after
+it was scaled. Two things worth keeping: replica-ratio canary weighting is
+incompatible with an autoscaler on the stable deployment, since the autoscaler
+owns your denominator — and **an HPA that cannot read metrics is not inert**.
+This one reported `ScalingActive: False` and enforced its bounds anyway.
+
+Full captured output, including the rollback verified by re-measurement:
+[docs/K8S_ROLLBACK_DEMO.md](docs/K8S_ROLLBACK_DEMO.md).
+
+---
+
+## 99.7% of a prediction was one library call
+
+The first load test on the credit service came back about 3× slower than the
+medical one. Profiled step by step on a single row:
+
+| Component | Time |
 |:--|--:|
-| `initial_list_status` | 0.638 |
-| `term` | 0.563 |
-| `int_rate` | 0.416 |
+| `QuantileTransformer` | **104 ms** |
+| everything else in preprocessing | 12 ms |
+| the model | **0.31 ms** |
 
-**None of them is a borrower attribute. They are the lender's own policy
-levers** — how a loan was listed, what terms were offered, how it was priced —
-and they churn enormously between windows accepted as stable, because Lending
-Club kept changing its product. Meanwhile 57 of 64 borrower features sit on the
-floor, almost motionless. A generic 0.2 threshold would page constantly on
-`int_rate` while missing real movement everywhere else. See
-[ADR 0007](docs/DECISIONS/0007-drift-thresholds.md).
+With `output_distribution="normal"`, sklearn calls `scipy.stats.norm.ppf` three
+times per column, so 162 times per request, and each call runs through scipy's
+generic distribution machinery. `scipy.special.ndtri` computes the same
+function in C. A subclass that uses it:
+
+- produces **bit-identical scores on all 162,236 test rows**, with the same
+  threshold and the same schema hash;
+- cuts a single prediction from **67 ms to 19 ms** and raises capacity from
+  **~20 to ~36 req/s**;
+- turns overload behaviour from *throughput falls* into *throughput holds*.
+
+It's guarded by tests that require exact equality against the parent class,
+because mirroring a private sklearn method is only safe if drift fails loudly.
+
+The re-measurement also showed the capacity alert had been dead for the whole
+migration. It fired at 42 req/s, 80% of the *medical* service's capacity, which
+the credit service can never reach. An existing test caught it as soon as the
+new measurement reached config.
+[LOAD_TEST_REPORT.md](docs/LOAD_TEST_REPORT.md) has the details, including the
+earlier report's attribution of this cost to the wrong step.
 
 ---
 
@@ -239,9 +388,15 @@ floor, almost motionless. A generic 0.2 threshold would page constantly on
 **Complete.** All eight phases, with every claim in the verification table
 below executed and observed rather than assumed.
 
-**282 tests** — 207 unit, 29 contract, 25 behaviour, 21 data-quality — plus a
-rollback cycle against a real registry. Lint, format, types and a Trivy
-container scan gate every pull request.
+**315 tests** — 221 unit, 29 contract, 25 behaviour, 21 data-quality, 19
+integration — plus a rollback cycle against a real registry. Lint, format,
+types and a Trivy container scan gate every pull request.
+
+The integration suite skips unless a service is reachable, which is worth
+saying out loud: three of its tests asserted the wrong domain's disclaimer for
+an entire migration and passed by never running. Both disclaimer tests now read
+the phrase from the configured setting, with a positive control asserting the
+two agree.
 
 ---
 
@@ -292,7 +447,7 @@ the rollout demo — see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | Incident response — what to do when it breaks |
 | [docs/K8S_ROLLBACK_DEMO.md](docs/K8S_ROLLBACK_DEMO.md) | Captured output from a real rollout failure, rollback and canary |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System diagram and component responsibilities |
-| [docs/DECISIONS/](docs/DECISIONS/) | Nine architecture decision records |
+| [docs/DECISIONS/](docs/DECISIONS/) | Ten architecture decision records |
 
 ---
 
@@ -356,7 +511,11 @@ undisclosed is worse than reading them here.
 | Container actually serves predictions | ✅ verified end-to-end; regression-tested in CI |
 | The UI's own payload validates | ✅ replicated the page's JavaScript against the real API |
 | End-to-end unattended retrain | ✅ ran in CI — retrained, gated, rollback verified |
-| Latency profile | ⚠️ measured, but the load generator was co-located — `remeasure_required: true` |
+| Every dashboard panel carries data | ✅ each panel's own PromQL run against Prometheus, 20/20 |
+| Bad deploy contained on Kubernetes | ✅ kind, 12/12 probes 200 during a failed rollout |
+| Canary split and breach evaluation | ✅ 8.7% measured at 9:1; breach fired on flagged-rate drift |
+| Canary rollback | ✅ by hand, verified by re-measurement — **not** automated |
+| Latency profile | ⚠️ re-measured with the API containerised, but the load generator is still co-located — p99 ranged 100–430 ms across identical runs, so absolutes are an upper bound |
 
 ---
 

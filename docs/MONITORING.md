@@ -121,51 +121,69 @@ ticket    = 1.5 × measured p99, sustained for 30 minutes
 
 | Setting | Value | Where it came from |
 |:--|--:|:--|
-| Measured p99 | 350 ms | Steady-state run, 6 users |
+| Measured p99 | 350 ms | Median of three 45 s runs at ~20 req/s (100, 430, 350) |
 | `slo_p99_ms` | **700** | 2 × 350 |
+| `slo_p95_ms` | 380 | 2 × 190 — the rule tightened this from 520 |
 | `ticket_p99_ms` | 525 | 1.5 × 350 |
-| `target_rps` | 25 | ~half the measured knee |
-| `measured_knee_rps` | 52 | Ramp sweep |
+| `target_rps` | 20 | ~half the measured knee |
+| `measured_knee_rps` | 36 | Ramp sweep |
 
-**That discipline earned its keep.** The plan estimated p50 of 4–8 ms; measured
-p50 is ~130 ms. The model is 1 ms and `ColumnTransformer.transform` is 64 ms.
-Chosen after seeing results, the rule would have been fitted to that behaviour
-and hidden the finding entirely.
+**That discipline earned its keep twice.** The plan estimated p50 of 4–8 ms;
+the first measurement found ~130 ms, with the model costing 1 ms and the
+feature transform 64 ms per call. That was recorded and not investigated.
+
+On credit the same transform cost ~104 ms of a ~116 ms prediction, and this
+time it was profiled to the line: `QuantileTransformer` with a normal output
+calls `scipy.stats.norm.ppf` three times per column, 162 calls per request, and
+scipy's generic distribution machinery is expensive per call. The identical
+function in C, `scipy.special.ndtri`, gives **bit-identical scores on all
+162,236 test rows** and cuts a single prediction from 67 ms to 19 ms. See
+[LOAD_TEST_REPORT.md](LOAD_TEST_REPORT.md).
+
+The SLO came out at 700 ms again. That is a coincidence of two different
+measurements under the same rule, not an inherited number.
 
 **`for: 5m` on the page** survives a GC pause and scrape jitter. A single slow
 scrape is not an incident, and paging on one teaches people to dismiss the alert.
 
 ### A caveat that is recorded, not buried
 
-The load generator ran on **the same machine as the service**, so every latency
-number includes contention between the measurement and the thing measured.
-Repeat runs varied **2–3×** with machine state.
+The API now runs in its container, but the load generator is still on **the
+same machine**, so every latency number includes contention between the
+measurement and the thing measured. Three runs at the same load produced p99s
+of 100, 430 and 350 ms.
 
-- **Trustworthy:** the shape — where the knee is, and that throughput inverts
-  past it. The sweep ran back to back under comparable conditions.
+- **Trustworthy:** relative results — where the knee is, whether throughput
+  inverts, and the before/after of the transformer fix, measured back to back.
 - **Not trustworthy:** the absolute numbers as a characterisation. They are an
   upper bound.
 
-`configs/thresholds.yaml` carries `remeasure_required: true`. The SLO is
+`configs/thresholds.yaml` still carries `remeasure_required: true`. The SLO is
 deliberately loose for this reason: a tight SLO derived from a contended
 measurement pages on healthy behaviour, which is worse than no SLO.
 
 ### Saturation
 
-**Provenance: `MEASURED`.** The ramp sweep found the knee between 20 and 40
-concurrent users, with an unambiguous signature:
+**Provenance: `MEASURED`.** Ramp sweep on the credit service, before and after
+the transformer fix, same container, back to back:
 
-| Users | Median ms | req/s |
-|--:|--:|--:|
-| 10 | 68 | 33.5 |
-| 20 | 110 | **52.3** |
-| 40 | 500 | 47.6 ⚠ |
+| Users | req/s before | req/s after | Median before | Median after |
+|--:|--:|--:|--:|--:|
+| 5 | 14.8 | 23.7 | 150 ms | 39 ms |
+| 10 | 17.7 | **35.3** | 300 ms | 98 ms |
+| 20 | 19.9 | 35.7 | 740 ms | 340 ms |
+| 40 | 17.3 ⚠ | 36.9 | 2,000 ms | 850 ms |
 
-Past the knee **throughput inverts** — work queues rather than completing.
-Adding load makes the service slower *and* less productive.
+Before the fix, throughput **inverted** past 20 users — the service got slower
+*and* less productive. After it, throughput plateaus at ~36 req/s and extra
+load only queues.
 
-The alert fires at **42 req/s (80% of the knee)**, deliberately *before* that
-regime. An alert at the knee arrives after the damage.
+The alert fires at **29 req/s (80% of the knee)**, deliberately before that
+regime. It used to fire at 42 — 80% of the medical service's knee — which the
+credit service could never reach, so the capacity alert was dead for the whole
+migration. The existing test asserting `fires_at < measured_knee_rps` caught it
+the moment the re-measured knee reached config: it had been passing only
+because config still held the medical number.
 
 ---
 

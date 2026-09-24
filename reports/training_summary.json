@@ -3652,8 +3652,8 @@
       "rationale": "Checks for interaction effects a linear model cannot capture. Must beat logistic with non-overlapping CIs to justify itself.",
       "complexity_rank": 3,
       "calibration_method": "isotonic",
-      "threshold": 0.19968008531058384,
-      "val_pr_auc": 0.267315,
+      "threshold": 0.19968008531024595,
+      "val_pr_auc": 0.267301,
       "calibration": {
         "method": "isotonic",
         "brier": 0.117793,

@@ -170,7 +170,11 @@ class ValidationErrorUser(HttpUser):
     def invalid_payload(self) -> None:
         with self.client.post(
             "/v1/predict",
-            json={"features": {**EXAMPLE_FEATURES, "age": "75"}},  # bare number
+            # Out of range on a real field. This sent {"age": "75"} — a medical
+            # field — which still earned a 422, but through extra="forbid"'s
+            # unknown-field rejection rather than value validation, so the
+            # scenario was timing a different code path from the one it names.
+            json={"features": {**EXAMPLE_FEATURES, "fico_range_low": 5000}},
             name="POST /v1/predict (invalid)",
             catch_response=True,
         ) as response:
