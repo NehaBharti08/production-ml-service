@@ -272,8 +272,8 @@ uv run mlservice retrain check          # reports HOW MANY windows it evaluated
 windows means *nothing was examined* — which is not the same as *no drift was
 found*, and the tool refuses to let those read alike.
 
-Every drift report carries `drift_origin`: `real` (the genuine 1999→2008 shift
-in medication mix and specialty recording) or `induced` (Phase 6 demo
+Every drift report carries `drift_origin`: `real` (the genuine 2014→2015 shift
+in the lender's pricing and listing mix) or `induced` (Phase 6 demo
 resampling). **Check it before treating a demo artefact as an incident.**
 
 ### Diagnostics
@@ -298,8 +298,8 @@ time in data we accepted* — not that it crossed a generic constant.
    to 40% missing looks like drift and is a pipeline bug. Check
    `feature_schema_hash` and `comparable` in the report.
 4. **Sampling noise.** Requires 3+ features breaching in **2 consecutive
-   windows** to confirm. With 43 features at a 99th-percentile threshold, ~0.4
-   breach per window by chance.
+   windows** to confirm. With 63 monitored features at a 99th-percentile
+   threshold, ~0.63 breach per window by chance.
 
 ### Remediation
 
@@ -560,8 +560,10 @@ uv run mlservice retrain check --json
 1. **Missing gate evidence.** `retrain evidence` prints
    `gap  <name> evidence absent — that gate will BLOCK, by design`. Collect it;
    do not default it.
-2. **Dataset download or checksum failure.** The UCI URL uses literal hyphens in
-   `130-us` and `1999-2008` — a wrong slug 404s.
+2. **Dataset download or checksum failure.** The source is a community mirror on
+   the Hugging Face hub, because Lending Club withdrew the official download. A
+   checksum mismatch means the mirror changed — **investigate before re-recording
+   the hash**, since every number in the model card depends on those bytes.
 3. **The registry is unreachable.** Training falls back to the local SQLite
    store and logs the substitution loudly. A failed tracking call is not a
    reason to lose a training run.

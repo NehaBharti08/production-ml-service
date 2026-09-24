@@ -290,7 +290,7 @@
       "type": "timeseries",
       "id": 11,
       "title": "Mean predicted probability",
-      "description": "Moves before accuracy does, and long before labels mature at 30 days. The earliest available signal that the input population changed.",
+      "description": "Moves before accuracy does, and years before a loan's label matures at the end of its term. The earliest available signal that the input population changed.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"

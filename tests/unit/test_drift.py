@@ -274,8 +274,8 @@ class TestAlertConfirmation:
         return report
 
     def test_one_breaching_window_does_not_alert(self) -> None:
-        """With ~43 features at a 99th-percentile threshold, roughly 0.4 breach
-        per window by chance. A single window is noise."""
+        """With 63 monitored features at a 99th-percentile threshold, roughly
+        0.63 breach per window by chance. A single window is noise."""
         assert not drift.alert_state([self._report(5)])["confirmed"]
 
     def test_two_consecutive_breaching_windows_alert(self) -> None:

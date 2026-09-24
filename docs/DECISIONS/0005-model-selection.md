@@ -74,7 +74,7 @@ thing looked at.
 ## Consequences
 
 **The champion is a regularised logistic regression**, calibrated with isotonic
-regression fitted on validation, at a decision threshold of 0.1011 chosen for a
+regression fitted on validation, at a decision threshold of 0.2070 chosen for a
 50% recall target on validation.
 
 **Serving is cheap and inspectable.** Inference is a dot product; coefficients

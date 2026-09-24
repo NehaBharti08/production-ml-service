@@ -295,7 +295,7 @@ def monitor_replay(
         )
     else:
         typer.secho(
-            "  NOTE  no manipulation — any drift below is real change in the 1999-2008 data",
+            "  NOTE  no manipulation — any drift below is real change in the 2007-2015 data",
             fg=typer.colors.CYAN,
         )
 

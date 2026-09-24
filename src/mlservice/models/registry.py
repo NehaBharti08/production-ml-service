@@ -143,7 +143,11 @@ def run(name: str, tags: dict[str, Any] | None = None) -> Iterator[Any]:
         "env": settings.env,
         # Recorded on every run so a model can always be traced back to the
         # exact split policy that produced its training data.
-        "split_policy": "chronological-encounter_id-proxy+censoring-buffer",
+        # This said "chronological-encounter_id-proxy+censoring-buffer" — the
+        # medical split — and was stamped onto every credit model trained after
+        # the migration. Provenance that describes the wrong split is worse
+        # than none, because it is believed.
+        "split_policy": "chronological-issue_d-month-boundaries+term-maturity-censoring",
         **(tags or {}),
     }
     with mlflow.start_run(run_name=name, tags=base_tags) as active:

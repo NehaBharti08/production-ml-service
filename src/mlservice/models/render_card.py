@@ -184,7 +184,8 @@ def render(summary: dict[str, Any], audit: dict[str, Any]) -> str:
     add(
         f"The intervals **{'overlap' if overlaps else 'do not overlap'}**, so the "
         f"model {'has not' if overlaps else 'has'} demonstrably beaten a "
-        "one-feature heuristic available at admission with no model at all. That "
+        "the lender's own priced risk, available at origination with no model of "
+        "ours at all. That "
         "was the bar for justifying the serving, monitoring and retraining "
         "infrastructure.\n"
     )

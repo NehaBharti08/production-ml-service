@@ -325,8 +325,8 @@ def simulate_maturation(
 ) -> pd.DataFrame:
     """Return the subset whose labels would have matured.
 
-    Real maturation is 30 days by definition, so at any moment only the oldest
-    part of a window has a label. Taking the **earliest** rows rather than a
+    Real maturation is the loan's term, so at any moment only the oldest part of
+    a window has a label. Taking the **earliest** rows rather than a
     random sample preserves that structure — a random sample would quietly
     pretend labels arrive uniformly, which is the one property delayed-label
     monitoring exists to handle.
@@ -357,7 +357,7 @@ class ReplayResult:
                 "demonstrate detection. It is not a finding about the data."
                 if self.drift_origin == "induced"
                 else "No manipulation applied. Any drift detected is real change in "
-                "the 1999-2008 dataset."
+                "the 2007-2015 dataset."
             ),
             "inducer": self.inducer,
             "first_detection_window": self.first_detection_window,

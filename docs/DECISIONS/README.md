@@ -18,6 +18,7 @@ precede Phase 1 ones.
 | [0007](0007-drift-thresholds.md) | Drift thresholds by empirical-null calibration | 6 | Accepted |
 | [0008](0008-promotion-gates-and-rollback.md) | Promotion gates run all-or-nothing, and the rollback path is exercised | 7 | Accepted |
 | [0009](0009-lender-grade-as-a-feature.md) | Keep the lender's own grade as a feature, and say what that costs | 2 | Accepted |
+| [0010](0010-term-censoring.md) | Term-dependent censoring: exclude `term` from drift, keep it as a feature, disclose the gap | 6 | Accepted |
 
 ## Why these exist
 

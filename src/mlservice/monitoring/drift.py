@@ -8,7 +8,7 @@ times:
     immediate, and it moves before accuracy does.
 *   **Delayed-label drift** — has actual performance degraded? The only one that
     directly answers "is the model still good", and the one that cannot be known
-    for 30 days.
+    until a loan's term ends — 1,096 days for a 36-month loan.
 
 The ordering matters operationally. Data and prediction drift are *leading*
 indicators — cheap, fast, and suggestive. Label drift is the *lagging* ground
@@ -404,8 +404,8 @@ def alert_state_from_counts(breaching_counts: list[int]) -> dict[str, Any]:
     """Decide whether consecutive windows constitute a confirmed alert.
 
     **Two-window confirmation is the whole point.** A single window breaching is
-    noise: with ~43 features at a 99th-percentile threshold, roughly 0.4 features
-    breach per window by chance alone. Requiring the same condition in
+    noise: with 63 monitored features at a 99th-percentile threshold, roughly
+    0.63 breach per window by chance alone. Requiring the same condition in
     consecutive windows is what stops the pager firing on sampling variation —
     and a pager that fires on noise is one people learn to ignore.
 
@@ -470,7 +470,7 @@ def load_reports(limit: int | None = None) -> list[dict[str, Any]]:
             if not report:
                 continue
             # Carried through so a caller can tell induced demo drift from the
-            # real 1999->2008 shift. Losing that distinction here is how an
+            # real 2014->2015 shift. Losing that distinction here is how an
             # honest report turns into a misleading one two layers up.
             report.setdefault("drift_origin", window.get("drift_origin"))
             report["source"] = path.name

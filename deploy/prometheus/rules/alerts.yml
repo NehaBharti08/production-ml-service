@@ -212,8 +212,8 @@ groups:
           runbook_url: "https://github.com/NehaBharti08/production-ml-service/blob/main/docs/RUNBOOK.md#model-degradation"
 
       - alert: PredictionDistributionShifted
-        # The score distribution moves before accuracy does, and long before
-        # labels mature at 30 days. This is the earliest available signal that
+        # The score distribution moves before accuracy does, and years before
+        # a loan's label matures. This is the earliest available signal that
         # the input population changed.
         #
         # Compares the 6h mean against the 7d mean rather than a fixed constant,
@@ -306,21 +306,29 @@ groups:
         # every performance metric quietly freezes at its last value and looks
         # healthy.
         #
-        # 888h = 30d maturation + 7d slack, from thresholds.yaml
+        # 192h = 8d, from thresholds.yaml
         # drift.alert.label_pipeline_stalled.max_hours_without_matured_label.
-        # Expressed as 5d here because the DEMO replays on a compressed clock;
-        # a real deployment would use the full window.
+        #
+        # This was "888h = 30d maturation + 7d slack", shortened to 5d for the
+        # demo's compressed clock. Both halves were wrong for credit. A loan
+        # takes 1,096 days to mature, and a watchdog keyed to that is a
+        # three-year fuse. But maturation is how long ONE label takes; this
+        # alert needs to know how long the FLOW can stop, and loans reach term
+        # every day because they originate every day. So the window is an
+        # arrival gap, which needs no clock compression, and the rule now
+        # matches config exactly instead of approximating it.
+        #
         # `increase() == 0` alone is the whole check. An earlier draft prefixed
         # it with `(time() - max(...) * 0) > 0`, which multiplies by zero and so
         # reduces to `time() > 0` — always true, contributing nothing. Caught by
         # reading the expression back rather than by any tool.
-        expr: increase(outcomes_recorded_total[5d]) == 0
+        expr: increase(outcomes_recorded_total[192h]) == 0
         for: 1h
         labels:
           severity: ticket
           slo: observability
         annotations:
-          summary: "No outcomes recorded in 5 days — label pipeline may be dead"
+          summary: "No outcomes recorded in 8 days — label pipeline may be dead"
           description: >-
             Without matured labels, rolling PR-AUC freezes at its last value and
             the performance-based retraining trigger can never fire. The metrics

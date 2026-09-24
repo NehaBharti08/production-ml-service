@@ -58,7 +58,7 @@ def _model_info(model: object) -> ModelInfo:
 @router.post(
     "/predict",
     response_model=PredictionResponse,
-    summary="Score one encounter",
+    summary="Score one loan application",
     responses={
         422: {"description": "Validation failed; the response names each field."},
         503: {"description": "No model loaded."},
@@ -126,7 +126,7 @@ async def predict(
 @router.post(
     "/predict/batch",
     response_model=BatchPredictionResponse,
-    summary="Score many encounters in one call",
+    summary="Score many loan applications in one call",
     responses={
         413: {"description": "Batch exceeds the configured maximum."},
         422: {"description": "Validation failed; the response names each field."},

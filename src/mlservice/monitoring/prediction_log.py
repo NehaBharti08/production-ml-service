@@ -13,7 +13,7 @@ So it is designed up front rather than evolved. Three properties earn their
 place:
 
 **Nullable outcome columns exist from day one.** A default label cannot
-exist until 30 days after discharge. If the columns were added later, every
+exist until the loan's term ends — 1,096 days for a 36-month loan. If the columns were added later, every
 record written before the migration would be unjoinable, and the first months of
 production data — exactly the baseline you want — would be useless.
 

@@ -61,8 +61,8 @@ reported separately rather than collapsed into one "retrain needed" boolean.
 Listed in `NOT_TRIGGERS` in the code and asserted by a test, so removing one is a
 failure rather than a quiet loosening:
 
-- **A single feature breaching in a single window.** With 43 features at a 99th-percentile
-  threshold, ~0.4 features breach per window by chance alone. This is noise.
+- **A single feature breaching in a single window.** With 63 monitored features at a
+  99th-percentile threshold, ~0.63 breach per window by chance alone. This is noise.
 - **Prediction drift without a corresponding data-drift signal.** Scores moving without
   inputs moving usually means the serving path changed, not the world.
 - **A latency or error-rate alert.** Those are serving problems. Retraining does not fix
@@ -291,13 +291,16 @@ different at demo traffic, where the first promotes after seeing almost nothing.
 
 Stated plainly rather than left for a reader to discover:
 
-- **The canary is designed and configured, not exercised.** Weighted traffic splitting
-  needs the kind cluster, and Docker is not installed on this machine. The manifests are
-  written and the thresholds are set; no canary rollout has actually run.
-- **`kubectl rollout undo` has not been demonstrated.** Same reason. The *registry* half
-  of rollback — the model-level lever — is genuinely verified above.
-- **The scheduled trigger runs on a simulated clock.** The dataset spans 1999–2008 and
-  has no timestamp column (see [ADR 0004](DECISIONS/0004-chronological-split.md)); the
+- **Canary rollback is manual.** The canary has run on kind — split measured, breach
+  evaluated, rolled back and re-measured; see
+  [K8S_ROLLBACK_DEMO.md](K8S_ROLLBACK_DEMO.md). But `auto_rollback_on_breach: true`
+  is a config value with nothing wired to act on it: the evaluator exits non-zero and a
+  human deletes the canary. A controller closing that loop is not built.
+- **`kubectl rollout undo` is demonstrated on kind only**, single node, with the
+  artifact mounted by `hostPath`. It is the same command a real cluster uses; the
+  surrounding infrastructure is not.
+- **The scheduled trigger runs on a simulated clock.** The dataset has a real date, but
+  it ends in 2015 (see [ADR 0004](DECISIONS/0004-chronological-split.md)); the
   30-day cadence is evaluated against registry creation timestamps.
 - **No retraining has been triggered end-to-end by drift in a live system.** The trigger
   fires correctly against real replay evidence — `retrain check` reports

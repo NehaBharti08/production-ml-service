@@ -490,9 +490,9 @@ def model_health(_t: dict[str, Any]) -> dict[str, Any]:
             "short",
             {"h": 8, "w": 12, "x": 0, "y": 6},
             11,
-            "Moves before accuracy does, and long before labels mature at 30 "
-            "days. The earliest available signal that the input population "
-            "changed.",
+            "Moves before accuracy does, and years before a loan's label "
+            "matures at the end of its term. The earliest available signal that "
+            "the input population changed.",
             decimals=4,
         )
     )

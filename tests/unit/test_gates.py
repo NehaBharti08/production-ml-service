@@ -243,7 +243,7 @@ class TestDataQualityGate:
         challenger = _evaluation(
             data_quality={
                 "suite_passed": True,
-                "missingness_increase_pct_points": {"medical_specialty": 35.0},
+                "missingness_increase_pct_points": {"emp_length": 35.0},
             }
         )
         result = gates.data_quality_gate(challenger)
