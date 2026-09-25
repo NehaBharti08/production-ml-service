@@ -109,8 +109,9 @@ jobs:
       # Training reads train/val/test parquet files; the raw download alone is
       # not enough. Missing this step failed the first end-to-end run with
       # "FileNotFoundError: missing splits ['train', 'val', 'test']" — the
-      # workflow went straight from raw data to training, a gap nothing could
-      # catch because no other job trains from scratch.
+      # workflow went straight from raw data to training. bootstrap-hf.yml
+      # also trains from scratch and had the identical gap until 2026-09-25 —
+      # keep the two in step.
       #
       # This also regenerates the audit, so the splits are produced by the same
       # code path a human would run rather than by a shortcut that exists only

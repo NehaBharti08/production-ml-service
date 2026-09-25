@@ -124,6 +124,14 @@ jobs:
       - name: Download and verify dataset
         run: uv run mlservice data download
 
+      # Training reads the train/val/test splits, not the raw CSV. Without this
+      # step the first credit bootstrap failed with
+      # "FileNotFoundError: missing splits ['train', 'val', 'test']" — the same
+      # failure retrain.yml hit and fixed earlier, whose comment claimed no
+      # other job trains from scratch. This one does, and never got the fix.
+      - name: Clean, audit and write the splits
+        run: uv run mlservice data audit --write-splits
+
       # Trained here rather than uploaded from a laptop, so the artifact in the
       # Model repo is reproducible from this commit rather than from whatever
       # happened to be on someone's disk.
