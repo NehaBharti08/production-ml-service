@@ -143,7 +143,11 @@ def run(name: str, tags: dict[str, Any] | None = None) -> Iterator[Any]:
         "env": settings.env,
         # Recorded on every run so a model can always be traced back to the
         # exact split policy that produced its training data.
-        "split_policy": "chronological-encounter_id-proxy+censoring-buffer",
+        # This said "chronological-encounter_id-proxy+censoring-buffer" — the
+        # medical split — and was stamped onto every credit model trained after
+        # the migration. Provenance that describes the wrong split is worse
+        # than none, because it is believed.
+        "split_policy": "chronological-issue_d-month-boundaries+term-maturity-censoring",
         **(tags or {}),
     }
     with mlflow.start_run(run_name=name, tags=base_tags) as active:
@@ -191,7 +195,9 @@ def current_version(name: str, alias: str) -> str | None:
         return None
 
 
-def save_local_fallback(pipeline: Any, path: Path | None = None) -> Path:
+def save_local_fallback(
+    pipeline: Any, path: Path | None = None, contract: dict[str, Any] | None = None
+) -> Path:
     """Persist the champion beside the code as the API's fallback artifact.
 
     Gitignored. Baked into the serving image at build time so the API can start
@@ -205,13 +211,13 @@ def save_local_fallback(pipeline: Any, path: Path | None = None) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(pipeline, target)
 
-    write_artifact_metadata(target.parent)
+    write_artifact_metadata(target.parent, contract)
 
     log.info("local_fallback_saved", path=str(target), size_kb=round(target.stat().st_size / 1e3))
     return target
 
 
-def write_artifact_metadata(directory: Path) -> Path | None:
+def write_artifact_metadata(directory: Path, contract: dict[str, Any] | None = None) -> Path | None:
     """Write the serving contract beside the artifact.
 
     **An artifact must carry its own contract.** The decision threshold is a
@@ -219,33 +225,45 @@ def write_artifact_metadata(directory: Path) -> Path | None:
     a model with someone else's threshold produces a service that is
     confidently wrong.
 
-    It used to live only in ``reports/training_summary.json``, which does not
-    travel with the model. The container mounts ``models/`` and nothing else,
-    so the API silently fell back to the config placeholder of 0.5 against a
-    model tuned to 0.1011, and flagged nobody while reporting itself healthy.
+    ``contract`` is passed in by the caller that just trained the model. It used
+    to be *read* from ``reports/training_summary.json`` instead, and that was a
+    real bug with a long fuse: ``save_local_fallback`` runs before the summary
+    for the current run is written, so the artifact was stamped with the
+    PREVIOUS run's threshold. Every retrain would have shipped a model carrying
+    its predecessor's operating point, and nothing would have complained.
 
-    Copying the two fields that constitute the contract next to the binary
-    means the threshold goes wherever the model goes — a mount, an HF download,
-    a Kubernetes volume.
+    It surfaced when the domain changed and the stale values were visibly from
+    another problem entirely (0.1011 against a model tuned to 0.207). Had the
+    domains matched, the numbers would merely have been slightly wrong — and
+    invisible.
+
+    Reading the file is kept only as a fallback for callers that have no
+    contract to hand, and it warns when it does so.
     """
     import json
 
-    summary_path = get_settings().paths.reports / "training_summary.json"
-    if not summary_path.is_file():
+    if contract is None:
+        summary_path = get_settings().paths.reports / "training_summary.json"
+        if not summary_path.is_file():
+            log.warning(
+                "artifact_metadata_not_written",
+                reason="no contract passed and no training summary to fall back on",
+                consequence="the served threshold will fall back to config",
+            )
+            return None
         log.warning(
-            "artifact_metadata_not_written",
-            reason="no training summary to copy from",
-            consequence="the served threshold will fall back to config",
+            "artifact_metadata_from_file",
+            reason="no contract passed; reading the last training summary",
+            hazard="that summary may describe a DIFFERENT run than this artifact",
         )
-        return None
+        contract = json.loads(summary_path.read_text(encoding="utf-8"))
 
-    summary = json.loads(summary_path.read_text(encoding="utf-8"))
     metadata = {
-        "champion": summary.get("champion"),
-        "champion_threshold": summary.get("champion_threshold"),
-        "feature_schema_hash": summary.get("feature_schema_hash"),
-        "calibration_method": summary.get("calibration_method"),
-        "registered_version": summary.get("registered_version"),
+        "champion": contract.get("champion"),
+        "champion_threshold": contract.get("champion_threshold"),
+        "feature_schema_hash": contract.get("feature_schema_hash"),
+        "calibration_method": contract.get("calibration_method"),
+        "registered_version": contract.get("registered_version"),
         "written_by": "mlservice.models.registry.write_artifact_metadata",
     }
 

@@ -74,21 +74,21 @@ class TestRedaction:
     """
 
     def test_redacts_configured_top_level_fields(self, captured_logs: list[dict[str, Any]]) -> None:
-        get_logger("test").info("evt", patient_nbr=8222157, encounter_id=2278392)
-        assert captured_logs[0]["patient_nbr"] == "<redacted>"
-        assert captured_logs[0]["encounter_id"] == "<redacted>"
+        get_logger("test").info("evt", member_id=8222157, annual_inc=91234)
+        assert captured_logs[0]["member_id"] == "<redacted>"
+        assert captured_logs[0]["annual_inc"] == "<redacted>"
 
     def test_redacts_nested_fields(self, captured_logs: list[dict[str, Any]]) -> None:
         """Identifiers usually arrive inside a payload dict, not at top level."""
-        get_logger("test").info("evt", features={"patient_nbr": 999, "age": "[70-80)"})
-        assert captured_logs[0]["features"] == {"patient_nbr": "<redacted>", "age": "[70-80)"}
+        get_logger("test").info("evt", features={"annual_inc": 999, "grade": "B"})
+        assert captured_logs[0]["features"] == {"annual_inc": "<redacted>", "grade": "B"}
 
     def test_redacts_inside_lists(self, captured_logs: list[dict[str, Any]]) -> None:
         """Batch prediction logs a list of records."""
-        get_logger("test").info("evt", batch=[{"patient_nbr": 1}, {"patient_nbr": 2}])
+        get_logger("test").info("evt", batch=[{"emp_title": "a"}, {"emp_title": "b"}])
         assert captured_logs[0]["batch"] == [
-            {"patient_nbr": "<redacted>"},
-            {"patient_nbr": "<redacted>"},
+            {"emp_title": "<redacted>"},
+            {"emp_title": "<redacted>"},
         ]
 
     def test_leaves_non_sensitive_fields_intact(self, captured_logs: list[dict[str, Any]]) -> None:
@@ -132,7 +132,7 @@ class TestConfiguration:
         monkeypatch.setattr(handler, "stream", stream)
 
         with request_context("json-test"):
-            get_logger("test").info("evt", latency_ms=1.5, patient_nbr=42)
+            get_logger("test").info("evt", latency_ms=1.5, member_id=42)
 
         payload = json.loads(stream.getvalue().strip().splitlines()[-1])
         assert payload["event"] == "evt"
@@ -140,4 +140,4 @@ class TestConfiguration:
         assert payload["latency_ms"] == 1.5
         assert payload["service"] == "mlservice"
         # Redaction must survive rendering, not just the processor chain.
-        assert payload["patient_nbr"] == "<redacted>"
+        assert payload["member_id"] == "<redacted>"

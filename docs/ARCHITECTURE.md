@@ -1,8 +1,8 @@
 # Architecture
 
-> **NOT FOR CLINICAL USE.** This document describes an engineering demonstration
-> of ML operations. Nothing here is clinically validated or fit to inform
-> patient care.
+> **NOT A CREDIT DECISIONING SYSTEM.** This document describes an engineering
+> demonstration of ML operations. Nothing here has been validated for lending,
+> and none of it may decide anyone's access to credit.
 
 ---
 

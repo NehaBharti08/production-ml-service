@@ -7,9 +7,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: readmission-api-config
+  name: credit-risk-api-config
   labels:
-    app: readmission-api
+    app: credit-risk-api
 data:
   MLSERVICE_ENV: "local"
 

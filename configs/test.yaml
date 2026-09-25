@@ -13,7 +13,7 @@ logging:
 
 mlflow:
   tracking_uri: ""   # tests use a tmp_path file store injected by fixtures
-  experiment_name: test-readmission-risk
+  experiment_name: test-credit-default-risk
 
 api:
   port: 8001         # never collide with a dev server on 8000

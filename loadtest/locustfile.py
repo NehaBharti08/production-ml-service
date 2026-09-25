@@ -36,32 +36,37 @@ try:
     from mlservice.api.schemas import EXAMPLE_FEATURES
 except ImportError:  # pragma: no cover - locust may run outside the venv
     EXAMPLE_FEATURES = {
-        "race": "Caucasian",
-        "gender": "Female",
-        "age": "[70-80)",
-        "admission_type_id": 1,
-        "discharge_disposition_id": 1,
-        "admission_source_id": 7,
-        "time_in_hospital": 5,
-        "medical_specialty": "InternalMedicine",
-        "num_lab_procedures": 41,
-        "num_procedures": 0,
-        "num_medications": 15,
-        "number_outpatient": 0,
-        "number_emergency": 0,
-        "number_inpatient": 1,
-        "diag_1": "Circulatory",
-        "diag_2": "Diabetes",
-        "diag_3": "Circulatory",
-        "number_diagnoses": 9,
-        "max_glu_serum": "NotMeasured",
-        "A1Cresult": "NotMeasured",
-        "insulin": "Up",
-        "change": "Ch",
-        "diabetesMed": "Yes",
+        "loan_amnt": 10000.0,
+        "term": " 36 months",
+        "int_rate": 11.99,
+        "installment": 332.1,
+        "grade": "B",
+        "sub_grade": "B3",
+        "purpose": "debt_consolidation",
+        "initial_list_status": "w",
+        "application_type": "Individual",
+        "annual_inc": 65000.0,
+        "emp_length": "5 years",
+        "home_ownership": "MORTGAGE",
+        "verification_status": "Verified",
+        "addr_state": "CA",
+        "dti": 18.4,
+        "fico_range_low": 700.0,
+        "credit_history_months": 180.0,
+        "open_acc": 11.0,
+        "total_acc": 24.0,
+        "revol_bal": 12500.0,
+        "revol_util": 43.2,
+        "delinq_2yrs": 0.0,
+        "inq_last_6mths": 1.0,
+        "pub_rec": 0.0,
+        "pub_rec_bankruptcies": 0.0,
     }
 
-AGE_BANDS = ["[40-50)", "[50-60)", "[60-70)", "[70-80)", "[80-90)"]
+# The grades the score actually turns on, and a few states for the geographic
+# spread. Used only to vary the payload; see _varied_features.
+GRADES = ["A", "B", "C", "D", "E"]
+STATES = ["CA", "NY", "TX", "FL", "IL", "PA", "OH", "GA"]
 
 
 def _varied_features() -> dict[str, Any]:
@@ -70,14 +75,25 @@ def _varied_features() -> dict[str, Any]:
     Identical payloads would let any caching — in pandas, in the encoder, or
     added later — flatter the numbers. Varying the fields that actually drive the
     score keeps the measurement honest.
+
+    These were readmission fields (`time_in_hospital`, `number_inpatient`,
+    `age`) long after the domain changed. Because they were spread on top of
+    EXAMPLE_FEATURES, they survived even once that import returned credit
+    fields — and the request schema sets ``extra="forbid"``, so every load-test
+    request would have been a 422. The run would have measured the validation
+    path and reported it as prediction latency.
     """
+    grade = random.choice(GRADES)  # load shaping, not crypto
     return {
         **EXAMPLE_FEATURES,
-        "age": random.choice(AGE_BANDS),  # load shaping, not crypto
-        "number_inpatient": random.randint(0, 8),
-        "number_emergency": random.randint(0, 4),
-        "time_in_hospital": random.randint(1, 14),
-        "num_medications": random.randint(5, 40),
+        "grade": grade,
+        "sub_grade": f"{grade}{random.randint(1, 5)}",
+        "addr_state": random.choice(STATES),
+        "loan_amnt": float(random.randrange(1_000, 35_000, 500)),
+        "int_rate": round(random.uniform(5.5, 28.0), 2),
+        "dti": round(random.uniform(0.0, 40.0), 2),
+        "fico_range_low": float(random.randrange(660, 845, 5)),
+        "annual_inc": float(random.randrange(25_000, 200_000, 1_000)),
     }
 
 
@@ -154,7 +170,11 @@ class ValidationErrorUser(HttpUser):
     def invalid_payload(self) -> None:
         with self.client.post(
             "/v1/predict",
-            json={"features": {**EXAMPLE_FEATURES, "age": "75"}},  # bare number
+            # Out of range on a real field. This sent {"age": "75"} — a medical
+            # field — which still earned a 422, but through extra="forbid"'s
+            # unknown-field rejection rather than value validation, so the
+            # scenario was timing a different code path from the one it names.
+            json={"features": {**EXAMPLE_FEATURES, "fico_range_low": 5000}},
             name="POST /v1/predict (invalid)",
             catch_response=True,
         ) as response:

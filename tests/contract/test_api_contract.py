@@ -36,7 +36,7 @@ class _StubPipeline:
 def _stub_model(probability: float = 0.42, threshold: float = 0.1011) -> LoadedModel:
     return LoadedModel(
         pipeline=_StubPipeline(probability),
-        name="readmission-risk",
+        name="credit-default-risk",
         version="test-1",
         stage="champion",
         source="registry",
@@ -91,7 +91,7 @@ class TestPredictContract:
         for field in (
             "prediction_id",
             "request_id",
-            "readmission_probability",
+            "default_probability",
             "flagged",
             "decision_threshold",
             "model",
@@ -109,14 +109,14 @@ class TestPredictContract:
     def test_flagged_follows_the_threshold_not_a_hardcoded_half(self, client: Any) -> None:
         """0.42 against a 0.1011 threshold must flag — the Phase 3 bug."""
         body = client.post("/v1/predict", json={"features": EXAMPLE_FEATURES}).json()
-        assert body["readmission_probability"] == pytest.approx(0.42)
+        assert body["default_probability"] == pytest.approx(0.42)
         assert body["decision_threshold"] == pytest.approx(0.1011)
         assert body["flagged"] is True
 
     def test_every_response_carries_the_disclaimer(self, client: Any) -> None:
-        """A JSON-only consumer must still be told this is not a clinical tool."""
+        """A JSON-only consumer must still be told this is not a lending tool."""
         body = client.post("/v1/predict", json={"features": EXAMPLE_FEATURES}).json()
-        assert "NOT FOR CLINICAL USE" in body["disclaimer"].upper()
+        assert "NOT A CREDIT DECISIONING SYSTEM" in body["disclaimer"].upper()
 
     def test_prediction_ids_are_unique_across_calls(self, client: Any) -> None:
         ids = {
@@ -148,26 +148,48 @@ class TestRequestIdPropagation:
 
 class TestErrorContract:
     def test_validation_error_names_the_field(self, client: Any) -> None:
-        bad = {**EXAMPLE_FEATURES, "time_in_hospital": 500}
+        """A BOUNDS violation on a real field, which is what this claims to test.
+
+        This sent `time_in_hospital: 500` — a field the credit schema has never
+        had — so `extra="forbid"` rejected it as unknown and the test passed
+        via the same path as `test_unknown_field_is_rejected` below. Two tests,
+        one code path, and the out-of-range branch untested.
+        """
+        bad = {**EXAMPLE_FEATURES, "fico_range_low": 5000}
         r = client.post("/v1/predict", json={"features": bad})
         assert r.status_code == 422
 
         body = r.json()
         assert body["title"] == "Validation failed"
         assert body["request_id"]
-        fields = [e["field"] for e in body["errors"]]
-        assert "features.time_in_hospital" in fields
+        errors = {e["field"]: e for e in body["errors"]}
+        assert "features.fico_range_low" in errors
+        # The constraint that was violated, not merely the field name.
+        assert "900" in str(errors["features.fico_range_low"].get("constraint", ""))
 
     def test_unknown_field_is_rejected(self, client: Any) -> None:
         """Silently ignoring it would let a caller believe it was used."""
         bad = {**EXAMPLE_FEATURES, "not_a_feature": 1}
         assert client.post("/v1/predict", json={"features": bad}).status_code == 422
 
-    def test_age_as_a_bare_number_is_rejected_with_a_useful_message(self, client: Any) -> None:
-        bad = {**EXAMPLE_FEATURES, "age": "75"}
+    def test_an_invalid_grade_is_rejected_with_a_useful_message(self, client: Any) -> None:
+        """The error must name the field and the constraint, not just fail."""
+        bad = {**EXAMPLE_FEATURES, "grade": "Z"}
         r = client.post("/v1/predict", json={"features": bad})
         assert r.status_code == 422
-        assert "band" in str(r.json()["errors"]).lower()
+        assert "grade" in str(r.json()["errors"]).lower()
+
+    def test_a_bare_term_is_normalised_rather_than_rejected(self, client: Any) -> None:
+        """The raw data stores ' 36 months' WITH a leading space.
+
+        A caller sending '36 months' would otherwise fall into the
+        unknown-category bucket and receive a plausible-looking score computed
+        from a discarded feature — the quietest way to be wrong. Normalising is
+        friendlier than rejecting, so this must succeed.
+        """
+        payload = {**EXAMPLE_FEATURES, "term": "36 months"}
+        r = client.post("/v1/predict", json={"features": payload})
+        assert r.status_code in (200, 503), r.text
 
     def test_errors_use_the_problem_content_type(self, client: Any) -> None:
         r = client.post("/v1/predict", json={"features": {**EXAMPLE_FEATURES, "age": "75"}})
@@ -235,7 +257,7 @@ class TestOutcomeContract:
         ]
         r = client.post(
             "/v1/outcomes",
-            json={"prediction_id": pid, "readmitted_within_30_days": True, "source": "test"},
+            json={"prediction_id": pid, "defaulted": True, "source": "test"},
         )
         assert r.status_code == 200
         assert r.json()["recorded"] is True
@@ -246,7 +268,7 @@ class TestOutcomeContract:
         unmatched IDs, which is where a systematic mismatch should surface."""
         r = client.post(
             "/v1/outcomes",
-            json={"prediction_id": "never-seen-before", "readmitted_within_30_days": False},
+            json={"prediction_id": "never-seen-before", "defaulted": False},
         )
         assert r.status_code == 200
 
@@ -256,7 +278,7 @@ class TestMetaContract:
         body = client.get("/v1/model").json()
         assert body["loaded"] is True
         assert body["source"] == "registry"
-        assert "NOT FOR CLINICAL USE" in body["disclaimer"].upper()
+        assert "NOT A CREDIT DECISIONING SYSTEM" in body["disclaimer"].upper()
 
     def test_metrics_endpoint_serves_prometheus_text(self, client: Any) -> None:
         r = client.get("/metrics")

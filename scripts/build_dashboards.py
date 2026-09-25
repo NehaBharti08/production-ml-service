@@ -72,6 +72,14 @@ def stat(
     ``textMode: value_and_name`` is deliberate: the tile shows the number *and*
     what it measures, so the colour is never the only signal. A bare coloured
     square communicates nothing to someone who has not memorised the layout.
+
+    The "name" Grafana prints is the **series** name, not this panel's title,
+    so without a legendFormat the tile rendered its own PromQL back at the
+    reader — ``drift_features_breaching{component="monitoring-job",
+    instance="node-exporter:9100", job="drift-textfile"}`` above the number.
+    That is the opposite of the intent above, and it was visible in every
+    dashboard capture. Naming the series after the panel is what makes
+    value_and_name mean what the docstring says.
     """
     return {
         "type": "stat",
@@ -80,7 +88,7 @@ def stat(
         "description": description,
         "datasource": DATASOURCE,
         "gridPos": grid,
-        "targets": [{"expr": expr, "refId": "A", "datasource": DATASOURCE}],
+        "targets": [{"expr": expr, "refId": "A", "datasource": DATASOURCE, "legendFormat": title}],
         "options": {
             "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
             "orientation": "auto",
@@ -445,8 +453,8 @@ def model_health(_t: dict[str, Any]) -> dict[str, Any]:
             _steps((None, TEXT)),
             {"h": 5, "w": 6, "x": 12, "y": 0},
             3,
-            "Share of patients above the decision threshold. This is what drives "
-            "downstream workload — measured at ~32% on the test split.",
+            "Share of applications above the decision threshold. This is what "
+            "drives downstream workload — measured at 25.9% on the test split.",
             decimals=3,
         )
     )
@@ -482,9 +490,9 @@ def model_health(_t: dict[str, Any]) -> dict[str, Any]:
             "short",
             {"h": 8, "w": 12, "x": 0, "y": 6},
             11,
-            "Moves before accuracy does, and long before labels mature at 30 "
-            "days. The earliest available signal that the input population "
-            "changed.",
+            "Moves before accuracy does, and years before a loan's label "
+            "matures at the end of its term. The earliest available signal that "
+            "the input population changed.",
             decimals=4,
         )
     )

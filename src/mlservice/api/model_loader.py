@@ -45,7 +45,7 @@ class LoadedModel:
     loaded_at: float
 
     def predict_proba(self, row: dict[str, Any]) -> float:
-        """Score one record. Returns P(readmitted within 30 days)."""
+        """Score one record. Returns P(the loan charges off or defaults)."""
         frame = pd.DataFrame([row])
         return float(self.pipeline.predict_proba(frame)[0][1])
 
@@ -230,11 +230,11 @@ class ModelStore:
         ``reports/training_summary.json`` is a build-time report that does not
         travel with the model. The container mounts ``models/`` and nothing
         else, so inside it that file does not exist — and the API fell back to
-        the config placeholder of 0.5 while the model had been tuned to 0.1011.
+        the config placeholder of 0.5 while the model had been tuned to 0.2070.
 
         Nothing failed. The service returned 200 with a plausible probability
-        and ``flagged: false`` for every patient, because scores cluster near
-        0.1 and almost nothing clears 0.5. A screening model that never flags
+        and ``flagged: false`` for every application, because scores cluster
+        near 0.15 and almost nothing clears 0.5. A risk model that never flags
         anyone, reporting itself perfectly healthy. It was found by making one
         real request to the container, and by nothing else — not by CI, not by
         the unit tests, not by the warning this code already logged.
@@ -285,9 +285,9 @@ class ModelStore:
         threshold produces a service that is confidently wrong.
 
         The bug this prevents was real: ``configs/base.yaml`` still carried the
-        0.5 placeholder while the trained threshold was 0.1011, so the API
-        returned ``flagged: false`` for a patient the model scored *above* its
-        own operating point. Nothing raised, because both values were
+        0.5 placeholder while the trained threshold was 0.2070, so the API
+        returned ``flagged: false`` for an application the model scored *above*
+        its own operating point. Nothing raised, because both values were
         individually valid.
 
         Config remains the fallback for a deployment with no training summary
@@ -333,13 +333,13 @@ class ModelStore:
     def _canary_inference(model: LoadedModel) -> None:
         """Score one synthetic record to prove the model actually works.
 
-        Uses the schema example rather than a stored patient record: a canary
+        Uses the schema example rather than a stored borrower record: a canary
         that needs real data cannot run in a fresh container, and this must work
         before any traffic arrives.
         """
-        from mlservice.api.schemas import EXAMPLE_FEATURES, PatientFeatures
+        from mlservice.api.schemas import EXAMPLE_FEATURES, LoanApplication
 
-        probability = model.predict_proba(PatientFeatures(**EXAMPLE_FEATURES).to_model_row())
+        probability = model.predict_proba(LoanApplication(**EXAMPLE_FEATURES).to_model_row())
         if not 0.0 <= probability <= 1.0:
             raise ValueError(f"canary inference returned {probability}, expected a probability")
         log.info("canary_inference_ok", probability=round(probability, 6))

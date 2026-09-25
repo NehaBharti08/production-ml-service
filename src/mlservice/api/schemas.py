@@ -12,11 +12,11 @@ Validation is strict on purpose:
     a version mismatch) and returning 422 tells them so. Silently ignoring it
     means they believe they sent a feature that was discarded.
 *   Numeric fields carry real bounds taken from the dataset, so a
-    ``time_in_hospital`` of 500 is rejected rather than scored.
+    ``fico_range_low`` of 5000 is rejected rather than scored.
 *   Categorical fields are **not** hard-restricted to observed values. The
     encoder handles unseen categories, and rejecting them would turn a
-    survivable degradation into an outage the first time a hospital adds a
-    specialty.
+    survivable degradation into an outage the first time the lender adds a
+    loan purpose.
 """
 
 from __future__ import annotations
@@ -24,8 +24,6 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
-from mlservice.data import schema
 
 # --------------------------------------------------------------------------- #
 # Request
@@ -35,141 +33,209 @@ from mlservice.data import schema
 #: canary input, so the two cannot drift apart — a canary that scores a payload
 #: the schema would reject proves nothing.
 EXAMPLE_FEATURES: dict[str, Any] = {
-    "race": "Caucasian",
-    "gender": "Female",
-    "age": "[70-80)",
-    "admission_type_id": 1,
-    "discharge_disposition_id": 1,
-    "admission_source_id": 7,
-    "time_in_hospital": 5,
-    "medical_specialty": "InternalMedicine",
-    "num_lab_procedures": 41,
-    "num_procedures": 0,
-    "num_medications": 15,
-    "number_outpatient": 0,
-    "number_emergency": 0,
-    "number_inpatient": 1,
-    "diag_1": "Circulatory",
-    "diag_2": "Diabetes",
-    "diag_3": "Circulatory",
-    "number_diagnoses": 9,
-    "max_glu_serum": "NotMeasured",
-    "A1Cresult": "NotMeasured",
-    "metformin": "No",
-    "insulin": "Up",
-    "change": "Ch",
-    "diabetesMed": "Yes",
+    # Loan terms
+    "loan_amnt": 10000.0,
+    "term": " 36 months",
+    "int_rate": 11.99,
+    "installment": 332.1,
+    "grade": "B",
+    "sub_grade": "B3",
+    "purpose": "debt_consolidation",
+    "initial_list_status": "w",
+    "application_type": "Individual",
+    # Borrower
+    "annual_inc": 65000.0,
+    "emp_length": "5 years",
+    "home_ownership": "MORTGAGE",
+    "verification_status": "Verified",
+    "addr_state": "CA",
+    # Bureau core
+    "dti": 18.4,
+    "fico_range_low": 700.0,
+    "credit_history_months": 180.0,
+    "open_acc": 11.0,
+    "total_acc": 24.0,
+    "revol_bal": 12500.0,
+    "revol_util": 43.2,
+    "delinq_2yrs": 0.0,
+    "inq_last_6mths": 1.0,
+    "pub_rec": 0.0,
+    "pub_rec_bankruptcies": 0.0,
+    # The optional bureau tail is deliberately OMITTED. The canary therefore
+    # exercises the missing-value path on every startup, which is the path a
+    # real caller is most likely to take — and the one where a broken imputer
+    # would otherwise go unnoticed until production.
 }
 
 
-class PatientFeatures(BaseModel):
-    """One encounter's features, as they appear before any transformation.
+class LoanApplication(BaseModel):
+    """One loan application, as known at origination.
 
-    Raw values, not encoded ones. The fitted transformer travels inside the
-    model artifact, so the caller sends ``age="[70-80)"`` and never needs to
-    know how it is encoded.
+    **Required fields are the ones a loan application always has**; every
+    credit-bureau attribute is optional and defaults to ``None``. That split is
+    a deliberate API decision, not laziness.
+
+    Bureau data is genuinely patchy — ``mths_since_recent_inq`` is null for
+    17.4% of the training set — and demanding all 64 features would force
+    callers to invent values for attributes they do not hold. Inventing them is
+    worse than omitting them, because the feature pipeline imputes a missing
+    value *and records that it was missing*, while a fabricated zero is
+    indistinguishable from a real one.
+
+    So the contract mirrors the data: a short required core, and a long
+    optional tail whose absence is itself informative.
     """
 
     model_config = ConfigDict(
         extra="forbid",
         str_strip_whitespace=True,
-        json_schema_extra={"example": EXAMPLE_FEATURES},
+        json_schema_extra={
+            "example": {
+                "loan_amnt": 10000,
+                "term": " 36 months",
+                "int_rate": 11.99,
+                "installment": 332.1,
+                "grade": "B",
+                "sub_grade": "B3",
+                "emp_length": "5 years",
+                "home_ownership": "MORTGAGE",
+                "annual_inc": 65000,
+                "verification_status": "Verified",
+                "purpose": "debt_consolidation",
+                "addr_state": "CA",
+                "dti": 18.4,
+                "fico_range_low": 700,
+                "credit_history_months": 180.0,
+                "open_acc": 11,
+                "total_acc": 24,
+                "revol_bal": 12500,
+                "revol_util": 43.2,
+            }
+        },
     )
 
-    # --- demographics ---
-    race: str = Field(default=schema.UNKNOWN_CATEGORY, description="Caucasian, AfricanAmerican, …")
-    gender: str = Field(default=schema.UNKNOWN_CATEGORY, description="Male, Female")
-    age: str = Field(..., description="Ten-year band, e.g. '[70-80)'")
+    # --- loan terms: always present on an application -----------------------
+    loan_amnt: float = Field(..., gt=0, le=100_000, description="Requested amount")
+    term: str = Field(..., description="' 36 months' or ' 60 months' (note the leading space)")
+    int_rate: float = Field(..., gt=0, le=40, description="Annual rate, percent")
+    installment: float = Field(..., gt=0, le=5_000, description="Monthly payment")
+    grade: str = Field(..., min_length=1, max_length=1, description="A-G, the lender's grade")
+    sub_grade: str = Field(..., min_length=2, max_length=2, description="e.g. 'B3'")
+    purpose: str = Field(..., description="debt_consolidation, credit_card, …")
+    initial_list_status: str = Field(default="w", description="'f' or 'w'")
+    application_type: str = Field(default="Individual")
 
-    # --- administrative (unordered code sets, kept categorical) ---
-    admission_type_id: int = Field(..., ge=1, le=9)
-    discharge_disposition_id: int = Field(..., ge=1, le=30)
-    admission_source_id: int = Field(..., ge=1, le=26)
-    medical_specialty: str = Field(default=schema.UNKNOWN_CATEGORY)
+    # --- borrower, as stated -------------------------------------------------
+    annual_inc: float = Field(..., ge=0, le=10_000_000, description="Stated annual income")
+    emp_length: str | None = Field(default=None, description="'10+ years', '< 1 year', …")
+    home_ownership: str = Field(..., description="MORTGAGE, RENT, OWN, …")
+    verification_status: str = Field(..., description="Verified, Source Verified, Not Verified")
+    addr_state: str = Field(..., min_length=2, max_length=2, description="Two-letter state code")
 
-    # --- utilisation ---
-    time_in_hospital: int = Field(..., ge=1, le=14, description="Days; 1-14 by dataset criteria")
-    num_lab_procedures: int = Field(..., ge=0, le=200)
-    num_procedures: int = Field(..., ge=0, le=20)
-    num_medications: int = Field(..., ge=0, le=100)
-    number_outpatient: int = Field(..., ge=0, le=100)
-    number_emergency: int = Field(..., ge=0, le=100)
-    number_inpatient: int = Field(
-        ..., ge=0, le=100, description="Prior inpatient admissions — strongest single predictor"
+    # --- bureau: the core an underwriter would always pull --------------------
+    dti: float = Field(..., ge=0, le=1_000, description="Debt-to-income, percent")
+    fico_range_low: float = Field(..., ge=300, le=900, description="Lower bound of the FICO band")
+    credit_history_months: float | None = Field(
+        default=None, ge=0, description="Months since the earliest credit line"
     )
-    number_diagnoses: int = Field(..., ge=1, le=20)
+    open_acc: float | None = Field(default=None, ge=0)
+    total_acc: float | None = Field(default=None, ge=0)
+    revol_bal: float | None = Field(default=None, ge=0)
+    revol_util: float | None = Field(default=None, ge=0)
+    delinq_2yrs: float | None = Field(default=None, ge=0)
+    inq_last_6mths: float | None = Field(default=None, ge=0)
+    pub_rec: float | None = Field(default=None, ge=0)
+    pub_rec_bankruptcies: float | None = Field(default=None, ge=0)
 
-    # --- diagnoses, as clinical bands ---
-    diag_1: str = Field(default=schema.UNKNOWN_CATEGORY, description="Circulatory, Diabetes, …")
-    diag_2: str = Field(default=schema.UNKNOWN_CATEGORY)
-    diag_3: str = Field(default=schema.UNKNOWN_CATEGORY)
+    # --- bureau: the long optional tail --------------------------------------
+    # Omitted values are imputed AND flagged as missing by the feature
+    # pipeline, so absence is modelled rather than papered over.
+    acc_now_delinq: float | None = None
+    acc_open_past_24mths: float | None = None
+    avg_cur_bal: float | None = None
+    bc_open_to_buy: float | None = None
+    bc_util: float | None = None
+    chargeoff_within_12_mths: float | None = None
+    collections_12_mths_ex_med: float | None = None
+    delinq_amnt: float | None = None
+    mo_sin_old_il_acct: float | None = None
+    mo_sin_old_rev_tl_op: float | None = None
+    mo_sin_rcnt_rev_tl_op: float | None = None
+    mo_sin_rcnt_tl: float | None = None
+    mort_acc: float | None = None
+    mths_since_recent_bc: float | None = None
+    mths_since_recent_inq: float | None = None
+    num_accts_ever_120_pd: float | None = None
+    num_actv_bc_tl: float | None = None
+    num_actv_rev_tl: float | None = None
+    num_bc_sats: float | None = None
+    num_bc_tl: float | None = None
+    num_il_tl: float | None = None
+    num_op_rev_tl: float | None = None
+    num_rev_accts: float | None = None
+    num_rev_tl_bal_gt_0: float | None = None
+    num_sats: float | None = None
+    num_tl_120dpd_2m: float | None = None
+    num_tl_30dpd: float | None = None
+    num_tl_90g_dpd_24m: float | None = None
+    num_tl_op_past_12m: float | None = None
+    pct_tl_nvr_dlq: float | None = None
+    percent_bc_gt_75: float | None = None
+    tax_liens: float | None = None
+    tot_coll_amt: float | None = None
+    tot_cur_bal: float | None = None
+    tot_hi_cred_lim: float | None = None
+    total_bal_ex_mort: float | None = None
+    total_bc_limit: float | None = None
+    total_il_high_credit_limit: float | None = None
+    total_rev_hi_lim: float | None = None
 
-    # --- labs: NotMeasured is meaningful, not missing ---
-    max_glu_serum: str = Field(default=schema.NOT_MEASURED_CATEGORY)
-    A1Cresult: str = Field(  # dataset column name, must match exactly
-        default=schema.NOT_MEASURED_CATEGORY,
-        description="'>7', '>8', 'Norm', or 'NotMeasured' if the test was not ordered",
-    )
-
-    # --- medications: No / Steady / Up / Down ---
-    metformin: str = "No"
-    repaglinide: str = "No"
-    nateglinide: str = "No"
-    chlorpropamide: str = "No"
-    glimepiride: str = "No"
-    acetohexamide: str = "No"
-    glipizide: str = "No"
-    glyburide: str = "No"
-    tolbutamide: str = "No"
-    pioglitazone: str = "No"
-    rosiglitazone: str = "No"
-    acarbose: str = "No"
-    miglitol: str = "No"
-    troglitazone: str = "No"
-    tolazamide: str = "No"
-    insulin: str = "No"
-    glyburide_metformin: str = Field(default="No", alias="glyburide-metformin")
-    glipizide_metformin: str = Field(default="No", alias="glipizide-metformin")
-    glimepiride_pioglitazone: str = Field(default="No", alias="glimepiride-pioglitazone")
-    metformin_rosiglitazone: str = Field(default="No", alias="metformin-rosiglitazone")
-    metformin_pioglitazone: str = Field(default="No", alias="metformin-pioglitazone")
-
-    # --- treatment ---
-    change: str = Field(default="No", description="'Ch' if medication changed, else 'No'")
-    diabetesMed: str = Field(  # noqa: N815 — must match the dataset column name exactly
-        default="No", description="'Yes' if any diabetes medication prescribed"
-    )
-
-    @field_validator("age")
+    @field_validator("term")
     @classmethod
-    def _age_looks_like_a_band(cls, v: str) -> str:
-        """Reject a bare number early with a message that says what is wrong.
+    def _term_matches_the_training_format(cls, v: str) -> str:
+        """Accept '36' or '36 months' and normalise to the trained form.
 
-        Sending ``age=75`` is the single most likely caller mistake, and the
-        generic "unseen category" path would silently score it as unknown —
-        producing a plausible-looking prediction from a discarded feature.
+        The raw data stores ``' 36 months'`` *with a leading space*, and the
+        one-hot encoder learned exactly that string. A caller sending ``'36
+        months'`` would fall into the unknown-category bucket and receive a
+        plausible-looking score computed from a discarded feature — the
+        quietest possible way to be wrong.
+
+        Normalising here is friendlier than rejecting, and the alternative
+        (teaching the encoder both forms) would hide the quirk instead of
+        handling it.
         """
-        if not (v.startswith("[") and "-" in v):
-            raise ValueError(
-                f"age must be a ten-year band like '[70-80)', got {v!r}. "
-                "This model was trained on banded ages, not exact ages."
-            )
-        return v
+        digits = "".join(ch for ch in v if ch.isdigit())
+        if digits not in {"36", "60"}:
+            raise ValueError(f"term must be 36 or 60 months, got {v!r}")
+        return f" {digits} months"
+
+    @field_validator("grade")
+    @classmethod
+    def _grade_is_a_to_g(cls, v: str) -> str:
+        if v.upper() not in set("ABCDEFG"):
+            raise ValueError(f"grade must be one of A-G, got {v!r}")
+        return v.upper()
+
+    @field_validator("addr_state")
+    @classmethod
+    def _state_is_upper(cls, v: str) -> str:
+        return v.upper()
 
     def to_model_row(self) -> dict[str, Any]:
         """Feature dict keyed by the column names the model expects.
 
-        ``by_alias=True`` restores the hyphenated medication names
-        (``glyburide-metformin``); the Python attributes use underscores because
-        a hyphen is not a valid identifier.
+        ``None`` is preserved rather than filled: the pipeline's imputer adds a
+        missingness indicator, so a null here becomes two pieces of
+        information, not a silently invented number.
         """
-        return self.model_dump(by_alias=True)
+        return self.model_dump()
 
 
 class PredictionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    features: PatientFeatures
+    features: LoanApplication
     client_id: str | None = Field(
         default=None,
         max_length=64,
@@ -183,7 +249,7 @@ class BatchPredictionRequest(BaseModel):
     #: Bounded because an unbounded batch is a denial-of-service vector and a
     #: latency-SLO hazard: one 100k-row request would blow the p99 for every
     #: concurrent caller. The limit is configurable per environment.
-    items: Annotated[list[PatientFeatures], Field(min_length=1)]
+    items: Annotated[list[LoanApplication], Field(min_length=1)]
     client_id: str | None = Field(default=None, max_length=64)
 
 
@@ -211,13 +277,13 @@ class PredictionResponse(BaseModel):
 
     prediction_id: str
     request_id: str
-    readmission_probability: float = Field(ge=0.0, le=1.0)
+    default_probability: float = Field(ge=0.0, le=1.0)
     flagged: bool = Field(description="probability >= decision_threshold")
     decision_threshold: float
     model: ModelInfo
     latency_ms: float
     #: Present in every prediction response, not only the docs. A consumer that
-    #: only ever sees JSON must still be told this is not a clinical tool.
+    #: only ever sees JSON must still be told this is not a lending tool.
     disclaimer: str
 
 
@@ -236,7 +302,11 @@ class OutcomeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     prediction_id: str = Field(..., min_length=8, max_length=64)
-    readmitted_within_30_days: bool
+    #: True if the loan charged off or defaulted. Only a TERMINAL outcome may be
+    #: reported: a loan that is merely late has not defaulted, and recording it
+    #: as either value would put a guess into the ground truth — the same rule
+    #: cleaning applies to the training labels.
+    defaulted: bool
     source: str = Field(default="manual", max_length=32)
 
 
@@ -256,10 +326,10 @@ __all__ = [
     "BatchPredictionRequest",
     "BatchPredictionResponse",
     "HealthResponse",
+    "LoanApplication",
     "ModelInfo",
     "OutcomeRequest",
     "OutcomeResponse",
-    "PatientFeatures",
     "PredictionRequest",
     "PredictionResponse",
 ]

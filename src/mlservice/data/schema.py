@@ -1,200 +1,206 @@
-"""Canonical column specification, shared by training and the API.
+"""The canonical column contract, shared by training and the API.
 
-One definition of "what a valid record looks like", imported by the training
-pipeline and by the Pydantic request models in Phase 3. When these two drift
-apart, the service starts serving predictions on features the model was never
-trained on — and nothing raises, because both halves are individually valid.
+One definition, imported by both sides. The alternative — a feature list in the
+training code and a Pydantic model written separately for the API — is how a
+model ends up scoring columns the caller never sent, in an order nobody
+checked. ``feature_schema_hash`` is computed from this module, travels with the
+artifact, and is compared at load time by the operational gate.
 
-Every exclusion below carries its reason. Dropping a column is a modelling
-decision, and an undocumented one is indistinguishable from an oversight.
+Everything here is derived from the cleaned frame rather than transcribed from
+the data dictionary. That distinction is not pedantry: the dictionary describes
+``loan_status`` as a loan attribute, which is true right up until it becomes the
+label, and writing the schema from it leaked the target back in as a feature.
 """
 
 from __future__ import annotations
 
+import hashlib
 from typing import Final
 
 # --------------------------------------------------------------------------- #
-# Identifiers — never features
+# Identity and target
 # --------------------------------------------------------------------------- #
 
-ENCOUNTER_ID: Final = "encounter_id"
-PATIENT_ID: Final = "patient_nbr"
-TARGET: Final = "readmitted"
-POSITIVE_LABEL: Final = "<30"
+#: The raw status column. NOT a feature — the label is derived from it, which
+#: makes it a perfect predictor. Dropped in cleaning; named here so the reason
+#: is recorded somewhere a reader will look.
+TARGET_SOURCE: Final = "loan_status"
 
-IDENTIFIER_COLUMNS: Final[tuple[str, ...]] = (ENCOUNTER_ID, PATIENT_ID)
+#: The binary label written by cleaning: 1 = charged off / defaulted.
+TARGET: Final = "target"
 
-# --------------------------------------------------------------------------- #
-# Missingness sentinels
-# --------------------------------------------------------------------------- #
+#: A REAL date, unlike the medical version's ID proxy. Used to order the
+#: chronological split and to bucket drift windows. Never a feature: it is the
+#: one column guaranteed to differ between train and serve.
+TIME_COLUMN: Final = "issue_d"
 
-#: This dataset encodes missing values as a literal "?" rather than an empty
-#: field, so pandas reads them as ordinary strings. Anything that counts nulls
-#: without normalising this first will report zero missingness and be wrong.
-MISSING_SENTINEL: Final = "?"
-
-#: Columns where a native NaN means "the test was not ordered" — a clinical
-#: decision, not an absent measurement. These become an explicit category
-#: rather than being imputed: whether a clinician ordered an HbA1c is itself
-#: informative, and imputing it destroys that signal.
-NOT_MEASURED_COLUMNS: Final[tuple[str, ...]] = ("max_glu_serum", "A1Cresult")
-NOT_MEASURED_CATEGORY: Final = "NotMeasured"
 UNKNOWN_CATEGORY: Final = "Unknown"
 
 # --------------------------------------------------------------------------- #
-# Exclusions, each with its reason
+# Features
 # --------------------------------------------------------------------------- #
 
-#: measured in the audit -> reason for dropping
-DROPPED_COLUMNS: Final[dict[str, str]] = {
-    "weight": (
-        "96.86% missing. Imputing a value present in 3% of records would "
-        "manufacture a variable rather than measure one. The honest move is to "
-        "drop it and say so."
-    ),
-    "examide": "Zero variance — constant 'No' across all 101,766 rows.",
-    "citoglipton": "Zero variance — constant 'No' across all 101,766 rows.",
-    "payer_code": (
-        "TIME-CONFOUNDED, not merely missing. Capture rises from 0% in the "
-        "first encounter_id decile to 86% in the last, because the field was "
-        "rolled out mid-period. Under a chronological split the model would "
-        "learn 'payer_code present' as a proxy for 'later era' — an artifact of "
-        "data capture with no clinical meaning, which cannot generalise. See "
-        "docs/DECISIONS/0004-temporal-split-proxy.md."
-    ),
-}
-
-#: discharge_disposition_id values where the patient died. Verified against
-#: IDS_mapping.csv AND against the data: 0 positives in 1,652 such rows.
-#: A dead patient cannot be readmitted, so the label is deterministic and a
-#: model would learn "died -> not readmitted" from the discharge code alone.
-EXPIRED_DISCHARGE_IDS: Final[tuple[int, ...]] = (11, 19, 20, 21)
-
-#: Hospice discharges. Excluded too, but for a DIFFERENT reason, and the
-#: distinction matters: these are NOT deterministic — observed positive rates
-#: are 4.76% (code 13) and 6.45% (code 14), so hospice patients genuinely are
-#: readmitted. They are excluded as a clinical-relevance judgement (readmission
-#: is not a meaningful quality signal in end-of-life care), not as leakage.
-#: Calling this "leakage" would overstate the finding.
-HOSPICE_DISCHARGE_IDS: Final[tuple[int, ...]] = (13, 14)
-
-EXCLUDED_DISCHARGE_IDS: Final[tuple[int, ...]] = EXPIRED_DISCHARGE_IDS + HOSPICE_DISCHARGE_IDS
-
-# --------------------------------------------------------------------------- #
-# Feature groups
-# --------------------------------------------------------------------------- #
-
+#: Borrower finances and credit-bureau history, as known at origination.
 NUMERIC_FEATURES: Final[tuple[str, ...]] = (
-    "time_in_hospital",
-    "num_lab_procedures",
-    "num_procedures",
-    "num_medications",
-    "number_outpatient",
-    "number_emergency",
-    "number_inpatient",
-    "number_diagnoses",
+    "loan_amnt",
+    "int_rate",
+    "installment",
+    "annual_inc",
+    "dti",
+    "fico_range_low",
+    "credit_history_months",
+    "open_acc",
+    "total_acc",
+    "revol_bal",
+    "revol_util",
+    "delinq_2yrs",
+    "delinq_amnt",
+    "acc_now_delinq",
+    "acc_open_past_24mths",
+    "inq_last_6mths",
+    "pub_rec",
+    "pub_rec_bankruptcies",
+    "tax_liens",
+    "chargeoff_within_12_mths",
+    "collections_12_mths_ex_med",
+    "tot_coll_amt",
+    "tot_cur_bal",
+    "tot_hi_cred_lim",
+    "total_bal_ex_mort",
+    "total_bc_limit",
+    "total_il_high_credit_limit",
+    "total_rev_hi_lim",
+    "avg_cur_bal",
+    "bc_open_to_buy",
+    "bc_util",
+    "percent_bc_gt_75",
+    "pct_tl_nvr_dlq",
+    "mort_acc",
+    "mo_sin_old_il_acct",
+    "mo_sin_old_rev_tl_op",
+    "mo_sin_rcnt_rev_tl_op",
+    "mo_sin_rcnt_tl",
+    "mths_since_recent_bc",
+    "mths_since_recent_inq",
+    "num_accts_ever_120_pd",
+    "num_actv_bc_tl",
+    "num_actv_rev_tl",
+    "num_bc_sats",
+    "num_bc_tl",
+    "num_il_tl",
+    "num_op_rev_tl",
+    "num_rev_accts",
+    "num_rev_tl_bal_gt_0",
+    "num_sats",
+    "num_tl_120dpd_2m",
+    "num_tl_30dpd",
+    "num_tl_90g_dpd_24m",
+    "num_tl_op_past_12m",
 )
 
-DEMOGRAPHIC_FEATURES: Final[tuple[str, ...]] = ("race", "gender", "age")
-
-#: Kept as categorical, not numeric. They are unordered code sets — an integer
-#: encoding would imply admission_type_id 8 is "more" than 2, which is meaningless.
-ADMINISTRATIVE_FEATURES: Final[tuple[str, ...]] = (
-    "admission_type_id",
-    "discharge_disposition_id",
-    "admission_source_id",
-    "medical_specialty",
-)
-
-DIAGNOSIS_FEATURES: Final[tuple[str, ...]] = ("diag_1", "diag_2", "diag_3")
-
-LAB_FEATURES: Final[tuple[str, ...]] = ("max_glu_serum", "A1Cresult")
-
-#: Medication columns retained. The near-zero-variance ones are kept for now
-#: (a 0.03%-prevalence drug still carries a little signal and costs one column);
-#: Phase 2 revisits whether they earn their place.
-MEDICATION_FEATURES: Final[tuple[str, ...]] = (
-    "metformin",
-    "repaglinide",
-    "nateglinide",
-    "chlorpropamide",
-    "glimepiride",
-    "acetohexamide",
-    "glipizide",
-    "glyburide",
-    "tolbutamide",
-    "pioglitazone",
-    "rosiglitazone",
-    "acarbose",
-    "miglitol",
-    "troglitazone",
-    "tolazamide",
-    "insulin",
-    "glyburide-metformin",
-    "glipizide-metformin",
-    "glimepiride-pioglitazone",
-    "metformin-rosiglitazone",
-    "metformin-pioglitazone",
-)
-
-TREATMENT_FEATURES: Final[tuple[str, ...]] = ("change", "diabetesMed")
-
+#: Loan terms and borrower attributes that arrive as labels rather than numbers.
 CATEGORICAL_FEATURES: Final[tuple[str, ...]] = (
-    DEMOGRAPHIC_FEATURES
-    + ADMINISTRATIVE_FEATURES
-    + DIAGNOSIS_FEATURES
-    + LAB_FEATURES
-    + MEDICATION_FEATURES
-    + TREATMENT_FEATURES
+    "term",
+    "grade",
+    "sub_grade",
+    "emp_length",
+    "home_ownership",
+    "verification_status",
+    "purpose",
+    "addr_state",
+    "initial_list_status",
+    "application_type",
 )
 
 ALL_FEATURES: Final[tuple[str, ...]] = NUMERIC_FEATURES + CATEGORICAL_FEATURES
 
-#: Dimensions for the subgroup analysis in Phase 2. Reported openly, including
-#: where the results are unflattering.
-SUBGROUP_DIMENSIONS: Final[tuple[str, ...]] = ("race", "gender", "age")
+#: Lending Club's OWN risk assessment, produced by their model at origination.
+#:
+#: Keeping these is a deliberate, arguable choice. They are legitimately
+#: available at scoring time, so they are not leakage — but they make this
+#: model partly a function of theirs, and a drift in their grading policy would
+#: propagate here as a silent distribution shift. Recorded so the choice is
+#: visible, and monitored per-feature for exactly that reason.
+#: See docs/DECISIONS/0009-lender-grade-as-a-feature.md.
+LENDER_ASSESSMENT_FEATURES: Final[tuple[str, ...]] = ("grade", "sub_grade", "int_rate")
 
 # --------------------------------------------------------------------------- #
-# Expected raw shape — asserted before anything downstream runs
+# Fairness
 # --------------------------------------------------------------------------- #
 
-RAW_ROW_COUNT: Final = 101_766
-RAW_COLUMN_COUNT: Final = 50
-RAW_PATIENT_COUNT: Final = 71_518
-# NOTE: the archive checksum deliberately lives ONLY in data/checksums.txt,
-# which download.py reads and enforces. Duplicating it here would create two
-# sources of truth that can silently disagree.
+#: Subgroups for disparate-impact analysis.
+#:
+#: US credit data legally EXCLUDES race, gender and marital status, so there
+#: are no protected attributes to slice on directly. Fair-lending practice uses
+#: geography and socioeconomic position as proxies instead — which is precisely
+#: what redlining analysis has always done — and that is what these are.
+#:
+#: Reported openly, including where unflattering. A disparity found here is not
+#: proof of discrimination; it is the signal that prompts someone to look.
+SUBGROUP_DIMENSIONS: Final[tuple[str, ...]] = (
+    "addr_state",
+    "emp_length",
+    "home_ownership",
+    "income_band",
+)
+
+#: Derived at evaluation time from ``annual_inc``. Quantile-based rather than
+#: fixed-dollar so the bands stay populated across an eleven-year span in which
+#: incomes drifted.
+INCOME_BAND_QUANTILES: Final[tuple[float, ...]] = (0.0, 0.25, 0.50, 0.75, 1.0)
+INCOME_BAND_LABELS: Final[tuple[str, ...]] = ("Q1_lowest", "Q2", "Q3", "Q4_highest")
+
+# --------------------------------------------------------------------------- #
+# Expectations — asserted against the real file in the data-quality suite
+# --------------------------------------------------------------------------- #
+
+RAW_ROW_COUNT: Final = 2_260_701
+RAW_COLUMN_COUNT: Final = 151
+CLEANED_ROW_COUNT: Final = 672_379
+CLEANED_COLUMN_COUNT: Final = 66
+
+#: Observed on the cleaned frame. A drift of more than a point or so means the
+#: cleaning rules changed, and every downstream number changed with them.
+CLEANED_POSITIVE_RATE: Final = 0.1481
 
 
-def expected_raw_columns() -> tuple[str, ...]:
-    """Every column expected in the raw file, in no particular order."""
-    return (*IDENTIFIER_COLUMNS, TARGET, *ALL_FEATURES, *DROPPED_COLUMNS)
+def expected_feature_columns() -> tuple[str, ...]:
+    """Every column the model consumes, in a stable order.
+
+    Order is part of the contract. A ColumnTransformer fitted on one order and
+    fed another does not raise — it silently scores the wrong columns.
+    """
+    return ALL_FEATURES
+
+
+def feature_schema_hash() -> str:
+    """A short, stable hash of the feature contract.
+
+    Recorded beside the artifact and compared at load time. If the training
+    contract and the serving contract diverge, the operational gate fails
+    instead of the service quietly scoring mismatched columns.
+    """
+    payload = "|".join(ALL_FEATURES).encode()
+    return hashlib.sha256(payload).hexdigest()[:16]
 
 
 __all__ = [
-    "ADMINISTRATIVE_FEATURES",
     "ALL_FEATURES",
     "CATEGORICAL_FEATURES",
-    "DEMOGRAPHIC_FEATURES",
-    "DIAGNOSIS_FEATURES",
-    "DROPPED_COLUMNS",
-    "ENCOUNTER_ID",
-    "EXCLUDED_DISCHARGE_IDS",
-    "EXPIRED_DISCHARGE_IDS",
-    "HOSPICE_DISCHARGE_IDS",
-    "IDENTIFIER_COLUMNS",
-    "LAB_FEATURES",
-    "MEDICATION_FEATURES",
-    "MISSING_SENTINEL",
-    "NOT_MEASURED_COLUMNS",
+    "CLEANED_COLUMN_COUNT",
+    "CLEANED_POSITIVE_RATE",
+    "CLEANED_ROW_COUNT",
+    "INCOME_BAND_LABELS",
+    "INCOME_BAND_QUANTILES",
+    "LENDER_ASSESSMENT_FEATURES",
     "NUMERIC_FEATURES",
-    "PATIENT_ID",
-    "POSITIVE_LABEL",
     "RAW_COLUMN_COUNT",
-    "RAW_PATIENT_COUNT",
     "RAW_ROW_COUNT",
     "SUBGROUP_DIMENSIONS",
     "TARGET",
-    "TREATMENT_FEATURES",
-    "expected_raw_columns",
+    "TARGET_SOURCE",
+    "TIME_COLUMN",
+    "UNKNOWN_CATEGORY",
+    "expected_feature_columns",
+    "feature_schema_hash",
 ]

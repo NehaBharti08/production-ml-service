@@ -8,8 +8,8 @@ The dataset is public and de-identified, so committing it would not breach
 anything. It still doesn't belong in git:
 
 - **It sets the wrong default.** A repository that demonstrates responsible
-  handling of health-adjacent data should not normalise putting clinical
-  records in version control, whatever their licence.
+  handling of consumer financial data should not normalise putting
+  borrower-level records in version control, whatever their licence.
 - **Git history is permanent.** A file committed once survives every later
   deletion. Establishing "row-level data never enters history" from the first
   commit is easier than fixing it afterwards.
@@ -44,35 +44,55 @@ data cannot detect drift, because it drifts along with it.
 
 ## Source
 
-**Diabetes 130-US Hospitals for Years 1999–2008**
-UCI Machine Learning Repository, dataset #296 — <https://doi.org/10.24432/C5230J>
+**Lending Club accepted loans, 2007–2018**
+Mirror: <https://huggingface.co/datasets/codesignal/lending-club-loan-accepted>
 
-101,766 inpatient encounters across 130 US hospitals. Inclusion criteria:
-inpatient admission, documented diabetes diagnosis, 1–14 day stay, laboratory
-tests performed, medications administered.
+2,260,701 originated loans with 151 columns, issued 2007-06 to 2018-12. After
+the label is resolved to terminal outcomes only and immature loans are removed,
+**672,379 loans across 2007-06 to 2015-12, 14.8% default**. 1.6 GB of CSV in,
+43 MB of parquet out.
 
-Originally published with:
+**Provenance rests on a mirror, and that is stated rather than hidden.** Lending
+Club withdrew the official download, so these bytes come from a community copy
+on the Hugging Face hub. `checksums.txt` pins them:
 
-> Strack, B., DeShazo, J.P., Gennings, C., Olmo, J.L., Ventura, S., Cios, K.J.,
-> Clore, J.N. (2014). *Impact of HbA1c Measurement on Hospital Readmission
-> Rates: Analysis of 70,000 Clinical Database Patient Records.* BioMed Research
-> International.
+    3eae03c28fd9d2e8a076ebeb73507e8d4d0f44d90500decdb0936e0933d1f36a
 
-Licensed CC BY 4.0. Attribution is carried in `docs/MODEL_CARD.md`.
+A mirror that changes underneath the project would alter every number in the
+model card in silence. The checksum converts that into a loud failure. It does
+not recover the original source, which is gone.
 
 ## Two properties that shape the whole project
 
-**There is no timestamp column.** Not a missing one — none exists. The only
-time signal is the ordering of `encounter_id`. Every "temporal" claim in this
-repo rests on that proxy, which Phase 1 tests empirically before relying on.
-See [`docs/DECISIONS/0004-temporal-split-proxy.md`](../docs/DECISIONS/0004-temporal-split-proxy.md).
+**It has a real date, and that date is a string.** `issue_d` is a genuine
+origination date — the chronological split needs no proxy argument — but it is
+stored as `"Dec-2018"`. Sorting it directly orders it *alphabetically*: Apr,
+Aug, Dec, Feb, Jan, Jul, Jun, Mar, May, Nov, Oct, Sep. That looks chronological
+to every check short of parsing it, and it silently produced all 64 drift
+thresholds and both replays before being caught. Ordering by time goes through
+`clean.order_by_time`, which parses first, and nothing else is allowed to do
+it. See [`docs/DECISIONS/0004-chronological-split.md`](../docs/DECISIONS/0004-chronological-split.md).
 
-**Some rows have a deterministic label.** `discharge_disposition_id` encodes
-expired and hospice discharges. A patient who died cannot be readmitted, so
-those rows carry a label the model can learn to predict from the discharge code
-alone. They are excluded during cleaning; the audit reports the before/after.
+**The maturity rule censors by loan term.** A label only exists once a loan
+reaches a terminal state, so the pipeline keeps only loans whose full term has
+elapsed: `issue_d + term <= observation_end`. Because the term is 36 or 60
+months, that rule bites unevenly — 36-month loans are kept through 2015-12,
+60-month loans only through 2013-11. The consequence is structural:
+
+| Split | 60-month share | Default rate |
+|:--|--:|--:|
+| train | 13.19% | 14.75% |
+| val | 0.00% | 15.12% |
+| test | 0.00% | 14.71% |
+
+The model is **trained** on 60-month loans, which default at 25.22% against
+13.95% for 36-month, and **evaluated** on a population containing none of them.
+Its behaviour on the longer term is therefore unvalidated, while a real lender
+would certainly be asked to score them. See
+[`docs/DECISIONS/0010-term-censoring.md`](../docs/DECISIONS/0010-term-censoring.md).
 
 ## Disclaimer
 
 This data supports an engineering demonstration only. Nothing derived from it
-is clinically validated or fit to inform patient care.
+has been validated for lending or reviewed for fair-lending compliance, and
+none of it may decide anyone's access to credit or its price.

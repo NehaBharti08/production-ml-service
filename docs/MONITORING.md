@@ -1,7 +1,7 @@
 # Monitoring Design
 
-> **NOT FOR CLINICAL USE.** This document describes monitoring for an
-> engineering demonstration. Nothing here is clinically validated.
+> **NOT A CREDIT DECISIONING SYSTEM.** This document describes monitoring for
+> an engineering demonstration. Nothing here has been validated for lending.
 
 Every threshold in this project answers "why that number?" with something other
 than "it looked about right". Arbitrary thresholds are the clearest sign that
@@ -121,51 +121,69 @@ ticket    = 1.5 × measured p99, sustained for 30 minutes
 
 | Setting | Value | Where it came from |
 |:--|--:|:--|
-| Measured p99 | 350 ms | Steady-state run, 6 users |
+| Measured p99 | 350 ms | Median of three 45 s runs at ~20 req/s (100, 430, 350) |
 | `slo_p99_ms` | **700** | 2 × 350 |
+| `slo_p95_ms` | 380 | 2 × 190 — the rule tightened this from 520 |
 | `ticket_p99_ms` | 525 | 1.5 × 350 |
-| `target_rps` | 25 | ~half the measured knee |
-| `measured_knee_rps` | 52 | Ramp sweep |
+| `target_rps` | 20 | ~half the measured knee |
+| `measured_knee_rps` | 36 | Ramp sweep |
 
-**That discipline earned its keep.** The plan estimated p50 of 4–8 ms; measured
-p50 is ~130 ms. The model is 1 ms and `ColumnTransformer.transform` is 64 ms.
-Chosen after seeing results, the rule would have been fitted to that behaviour
-and hidden the finding entirely.
+**That discipline earned its keep twice.** The plan estimated p50 of 4–8 ms;
+the first measurement found ~130 ms, with the model costing 1 ms and the
+feature transform 64 ms per call. That was recorded and not investigated.
+
+On credit the same transform cost ~104 ms of a ~116 ms prediction, and this
+time it was profiled to the line: `QuantileTransformer` with a normal output
+calls `scipy.stats.norm.ppf` three times per column, 162 calls per request, and
+scipy's generic distribution machinery is expensive per call. The identical
+function in C, `scipy.special.ndtri`, gives **bit-identical scores on all
+162,236 test rows** and cuts a single prediction from 67 ms to 19 ms. See
+[LOAD_TEST_REPORT.md](LOAD_TEST_REPORT.md).
+
+The SLO came out at 700 ms again. That is a coincidence of two different
+measurements under the same rule, not an inherited number.
 
 **`for: 5m` on the page** survives a GC pause and scrape jitter. A single slow
 scrape is not an incident, and paging on one teaches people to dismiss the alert.
 
 ### A caveat that is recorded, not buried
 
-The load generator ran on **the same machine as the service**, so every latency
-number includes contention between the measurement and the thing measured.
-Repeat runs varied **2–3×** with machine state.
+The API now runs in its container, but the load generator is still on **the
+same machine**, so every latency number includes contention between the
+measurement and the thing measured. Three runs at the same load produced p99s
+of 100, 430 and 350 ms.
 
-- **Trustworthy:** the shape — where the knee is, and that throughput inverts
-  past it. The sweep ran back to back under comparable conditions.
+- **Trustworthy:** relative results — where the knee is, whether throughput
+  inverts, and the before/after of the transformer fix, measured back to back.
 - **Not trustworthy:** the absolute numbers as a characterisation. They are an
   upper bound.
 
-`configs/thresholds.yaml` carries `remeasure_required: true`. The SLO is
+`configs/thresholds.yaml` still carries `remeasure_required: true`. The SLO is
 deliberately loose for this reason: a tight SLO derived from a contended
 measurement pages on healthy behaviour, which is worse than no SLO.
 
 ### Saturation
 
-**Provenance: `MEASURED`.** The ramp sweep found the knee between 20 and 40
-concurrent users, with an unambiguous signature:
+**Provenance: `MEASURED`.** Ramp sweep on the credit service, before and after
+the transformer fix, same container, back to back:
 
-| Users | Median ms | req/s |
-|--:|--:|--:|
-| 10 | 68 | 33.5 |
-| 20 | 110 | **52.3** |
-| 40 | 500 | 47.6 ⚠ |
+| Users | req/s before | req/s after | Median before | Median after |
+|--:|--:|--:|--:|--:|
+| 5 | 14.8 | 23.7 | 150 ms | 39 ms |
+| 10 | 17.7 | **35.3** | 300 ms | 98 ms |
+| 20 | 19.9 | 35.7 | 740 ms | 340 ms |
+| 40 | 17.3 ⚠ | 36.9 | 2,000 ms | 850 ms |
 
-Past the knee **throughput inverts** — work queues rather than completing.
-Adding load makes the service slower *and* less productive.
+Before the fix, throughput **inverted** past 20 users — the service got slower
+*and* less productive. After it, throughput plateaus at ~36 req/s and extra
+load only queues.
 
-The alert fires at **42 req/s (80% of the knee)**, deliberately *before* that
-regime. An alert at the knee arrives after the damage.
+The alert fires at **29 req/s (80% of the knee)**, deliberately before that
+regime. It used to fire at 42 — 80% of the medical service's knee — which the
+credit service could never reach, so the capacity alert was dead for the whole
+migration. The existing test asserting `fires_at < measured_knee_rps` caught it
+the moment the re-measured knee reached config: it had been passing only
+because config still held the medical number.
 
 ---
 
@@ -198,31 +216,47 @@ computed between adjacent pairs, 19 comparisons per feature.
 threshold[feature] = clamp(percentile_99(null_psi[feature]), 0.10, 0.25)
 ```
 
-**The result across all 43 features and 19 stable comparisons (817 checks):**
+**The result across all 64 features and 19 stable comparisons (1,216 checks):**
 
 | Approach | False alarms | Rate |
 |:--|--:|--:|
-| Uniform PSI > 0.10 | 21 | **2.57%** |
-| Calibrated per-feature | 6 | **0.73%** |
+| Uniform PSI > 0.10 | 20 | **1.64%** |
+| Calibrated per-feature | 12 | **0.99%** |
 
-The calibrated rate closely matches the 1% the 99th percentile predicts — a
-check that the method does what it claims.
+The calibrated rate lands on the 1% the 99th percentile predicts — a check that
+the method does what it claims.
 
-**The finding that settles the argument:** `medical_specialty` has a median null
-PSI of **0.1196**, *above* the conventional 0.10. It would have breached in
-**11 of 19 windows we had already accepted as stable** — alarming more than half
-the time on data with no drift in it.
+**These numbers are the second calibration, not the first.** `issue_d` is a date
+stored as a string, and the first run sorted it alphabetically, so its
+"consecutive" windows were adjacent in the alphabet rather than in time. Nothing
+failed and every threshold looked plausible; the defect was proved by
+reproducing the recorded PSI values exactly from a lexicographic sort. Ordering
+now goes through `clean.order_by_time`, which parses first.
+
+**The finding the corrected calibration settles:** the features that hit the
+ceiling are not noisy. They are flat, with one step change each.
+
+| Feature | Median null PSI | p99 | The step |
+|:--|--:|--:|:--|
+| `initial_list_status` | 0.0069 | 0.6726 | whole-loan listing introduced, late 2012 |
+| `term` | 0.0016 | 0.6169 | **the pipeline's own maturity rule**, 2013-11 |
+| `int_rate` | 0.0331 | 0.3339 | repricing, late 2011 |
+| `verification_status` | 0.0170 | 0.2644 | income verification tightened, late 2010 |
+
+A uniform 0.10 would have breached `int_rate` in 4 of 19 windows already
+accepted as stable while its median churn is a third of that bar. One constant
+either pages on every step or sleeps through everything else.
 
 | Outcome | Count |
 |:--|--:|
-| Clamped to the 0.10 floor (genuinely stable) | 37 |
-| Set their own threshold from measured churn | 4 |
-| Clamped to the 0.25 ceiling (very volatile) | 2 |
+| Clamped to the 0.10 floor (genuinely stable) | 54 |
+| Set their own threshold from measured churn | 6 |
+| Clamped to the 0.25 ceiling (step changes) | 4 |
 
-Most features land on the conventional floor. Calibration did not overturn the
-convention — it identified the six features for which the convention was wrong,
-which is the whole value. See
-[ADR 0007](DECISIONS/0007-drift-thresholds.md).
+`term` is then excluded from monitoring altogether, because its step is caused
+by us rather than by the lender — see
+[ADR 0010](DECISIONS/0010-term-censoring.md). The monitor watches 63 features.
+See also [ADR 0007](DECISIONS/0007-drift-thresholds.md).
 
 ### Alert conditions
 
@@ -332,14 +366,30 @@ timestamps should not require arithmetic.
 
 ### Real drift exists, and it is detected
 
-Replaying the **untouched** test split flags 6 then 5 features across two
-windows: `medical_specialty`, `admission_source_id`, `admission_type_id`,
-`number_diagnoses` — the same recording-practice features Phase 1 found shifting
-across 1999-2008.
+Replaying the **untouched** test split — 32 windows, Jul-2015 to Dec-2015 —
+against the training reference:
 
-This is not a false alarm and not a demonstration. The model genuinely operates
-on a drifted population, consistent with the positive rate falling from 9.87%
-(train) to 7.57% (test).
+| Feature | Windows breaching |
+|:--|--:|
+| `int_rate` | 31 / 32 |
+| `initial_list_status` | 26 / 32 |
+| `sub_grade` | 11 / 32 |
+| `grade` | 9 / 32 |
+| `addr_state` | 7 / 32 |
+
+The alert **confirms at window 16** and again at 17, 21, 22 and 25 — three or
+more features in two consecutive windows. Everywhere else it holds, because a
+single loud window is treated as noise.
+
+Every persistent breach is a lender lever, not a borrower attribute: the book
+was repriced and its listing mix changed between the 2014 reference and the
+2015 loans being scored. The default rate barely moves — 14.75% in train, 14.71%
+in test — so this is drift in *who is being offered what*, not in how often
+people default. That is the case where input drift and performance drift come
+apart, and why the lagging label signal exists alongside the leading one.
+
+Before `term` was excluded, it breached in **32 of 32** windows at the identical
+PSI of 1.5738, and sat on top of every alert above without adding information.
 
 ### Induced drift, labelled as induced
 
@@ -350,15 +400,29 @@ fires beforehand too.
 The induced effect is instead demonstrated on the **manipulated feature
 specifically**:
 
-| Window | Origin | `age` PSI | Threshold | Breaching |
+| Window | Origin | `grade` PSI | Threshold | Breaching |
 |--:|:--|--:|--:|:--|
-| 0 | real | 0.0211 | 0.10 | no |
-| 1 | real | 0.0143 | 0.10 | no |
-| 2 | **induced** | **0.5292** | 0.10 | **yes** |
+| 0 | real | 0.1021 | 0.10 | yes |
+| 1 | real | 0.0560 | 0.10 | no |
+| 2 | **induced** | **0.2746** | 0.10 | **yes** |
+| 3 | **induced** | **0.3137** | 0.10 | **yes** |
+| 4 | **induced** | **0.3032** | 0.10 | **yes** |
 
-Prediction drift responds too: the alert rate moves from a 0.26 reference to
-**0.414** in the induced window, because over-sampling older patients raises the
-share above the decision threshold.
+Prediction drift responds too. The alert rate moves from a 0.3334 reference to
+**0.4388, 0.4620 and 0.4572** across the three induced windows — +32%, +39% and
++37% — because over-sampling the sub-prime D-G shoulder raises the share above
+the decision threshold.
+
+**Window 0 breaches, and it is a clean window.** That is not a defect in the
+demo and it is not smoothed over: the reference is the training period ending
+2014-12 and the replay runs on 2015 loans, so there is genuine drift between
+them before anything is manufactured. It sits at 0.1021 against a 0.10
+threshold — a hair over — while the induced windows sit near 0.30. The
+two-window confirmation rule is what separates those two situations, and this
+is precisely the case it exists for.
+
+A clean prefix that happened to be perfectly quiet would be a nicer picture and
+a weaker demonstration.
 
 Every artefact carries `drift_origin: "real" | "induced"` as its first key, and
 every manipulation records exactly what it changed. This is enforced by test,
@@ -378,5 +442,7 @@ manufactured claims something it has not earned.
   trigger.
 - **Delayed labels are simulated**, not observed. Maturation is compressed for
   the demo; the ordering and delay structure are preserved, but no label has
-  actually waited 30 days.
+  actually waited out a 36-month term. The outcomes behind the live dashboard's
+  rolling PR-AUC were drawn from the model's own probabilities, so that panel
+  demonstrates the plumbing, not the model's quality.
 - **Latency numbers need re-measuring off-box.** See the caveat in §2.

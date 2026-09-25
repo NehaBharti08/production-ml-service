@@ -1,7 +1,7 @@
 # Canary deployment — 10% of traffic to a challenger.
 #
 # **Weighting by replica ratio, not by a service mesh.** Both Deployments carry
-# `app: readmission-api`, so the one Service load-balances across every Ready
+# `app: credit-risk-api`, so the one Service load-balances across every Ready
 # pod from either. Nine stable replicas beside one canary gives 1-in-10, which
 # is the `rollout.canary.traffic_percent: 10` in configs/thresholds.yaml.
 #
@@ -12,23 +12,28 @@
 # 3.5-4 GB precisely because compose and a cluster cannot both run here.
 #
 # The canary serves a DIFFERENT OPERATING POINT (threshold 0.15 against the
-# champion's 0.1011). That is what makes the split measurable: every response
+# champion's 0.2070). That is what makes the split measurable: every response
 # carries `decision_threshold`, so counting responses attributes traffic to a
 # version without needing pod names, headers, or a mesh's telemetry. It is also
 # what a canary genuinely is — a different model version taking real traffic.
+#
+# 0.15 is below the champion's operating point, so the canary flags MORE
+# applications than stable. In credit that is a real business change — a lower
+# bar rejects more borrowers — and it lands on the flagged rate, which is the
+# quantity the breach evaluation watches.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: readmission-api-canary
+  name: credit-risk-api-canary
   labels:
-    app: readmission-api
+    app: credit-risk-api
     track: canary
 spec:
   replicas: 1 # 1 of 10 total = the configured 10%
   revisionHistoryLimit: 3
   selector:
     matchLabels:
-      app: readmission-api
+      app: credit-risk-api
       track: canary
   template:
     metadata:
@@ -36,7 +41,7 @@ spec:
         # `app` is what the Service selects on — this is the line that puts the
         # canary into rotation. `track` distinguishes it for kubectl and for
         # scaling it to zero, which is how a rollback is performed here.
-        app: readmission-api
+        app: credit-risk-api
         track: canary
       annotations:
         prometheus.io/scrape: "true"
@@ -57,7 +62,7 @@ spec:
               containerPort: 8000
           envFrom:
             - configMapRef:
-                name: readmission-api-config
+                name: credit-risk-api-config
           env:
             # The only difference from stable. Points at the challenger
             # artifact, whose metadata.json carries the candidate threshold.

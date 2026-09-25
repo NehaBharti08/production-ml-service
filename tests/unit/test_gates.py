@@ -188,7 +188,7 @@ class TestBehavioralGate:
             behavioral={
                 "total": 20,
                 "passed": 19,
-                "failures": ["test_more_prior_inpatient_admissions_never_lowers_risk"],
+                "failures": ["test_a_worse_grade_never_lowers_risk"],
             }
         )
         result = gates.behavioral_gate(challenger)
@@ -243,7 +243,7 @@ class TestDataQualityGate:
         challenger = _evaluation(
             data_quality={
                 "suite_passed": True,
-                "missingness_increase_pct_points": {"medical_specialty": 35.0},
+                "missingness_increase_pct_points": {"emp_length": 35.0},
             }
         )
         result = gates.data_quality_gate(challenger)

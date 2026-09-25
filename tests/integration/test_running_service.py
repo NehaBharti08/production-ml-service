@@ -84,12 +84,12 @@ class TestRealHttpBehaviour:
         assert response.status_code == 200
 
         body = response.json()
-        assert 0.0 <= body["readmission_probability"] <= 1.0
-        assert body["flagged"] == (body["readmission_probability"] >= body["decision_threshold"])
+        assert 0.0 <= body["default_probability"] <= 1.0
+        assert body["flagged"] == (body["default_probability"] >= body["decision_threshold"])
 
     def test_threshold_is_not_the_placeholder(self, http: Any) -> None:
         """Regression: the API once served config's 0.5 instead of the trained
-        0.1011, so a patient above the model's own operating point came back
+        0.2070, so an application above the model's own operating point came back
         unflagged. In-process tests used a stub threshold and could not have
         caught it."""
         _require_ready(http)
@@ -154,7 +154,7 @@ class TestOutcomeLifecycle:
             "/v1/outcomes",
             json={
                 "prediction_id": prediction_id,
-                "readmitted_within_30_days": True,
+                "defaulted": True,
                 "source": "integration-test",
             },
         )
@@ -189,19 +189,38 @@ class TestBatchOverHttp:
         )
 
 
+#: The one phrase every surface must carry, sourced from the setting rather
+#: than spelled out three times. These tests asserted "NOT FOR CLINICAL USE"
+#: for a full domain change after the service began saying something else —
+#: and nobody noticed, because they only execute when a service is actually
+#: reachable and otherwise skip. A test that skips by default is a test that
+#: fails silently.
+DISCLAIMER_PHRASE = "NOT A CREDIT DECISIONING SYSTEM"
+
+
 class TestDisclaimerIsEverywhere:
-    """A health-adjacent service must say what it is on every surface."""
+    """A service that scores credit must say what it is on every surface."""
+
+    def test_the_phrase_matches_the_configured_disclaimer(self) -> None:
+        """Positive control: the constant above must track the real setting.
+
+        Without this, correcting the service's disclaimer and forgetting these
+        tests reproduces exactly the failure they were just fixed for.
+        """
+        from mlservice.config import get_settings
+
+        assert DISCLAIMER_PHRASE in get_settings().api.disclaimer.upper()
 
     def test_in_prediction_responses(self, http: Any, features: dict[str, Any]) -> None:
         _require_ready(http)
         body = http.post("/v1/predict", json={"features": features}).json()
-        assert "NOT FOR CLINICAL USE" in body["disclaimer"].upper()
+        assert DISCLAIMER_PHRASE in body["disclaimer"].upper()
 
     def test_in_model_metadata(self, http: Any) -> None:
-        assert "NOT FOR CLINICAL USE" in http.get("/v1/model").json()["disclaimer"].upper()
+        assert DISCLAIMER_PHRASE in http.get("/v1/model").json()["disclaimer"].upper()
 
     def test_in_the_ui(self, http: Any) -> None:
         response = http.get("/")
         if response.status_code != 200:
             pytest.skip("UI not mounted in this deployment")
-        assert "NOT FOR CLINICAL USE" in response.text.upper()
+        assert DISCLAIMER_PHRASE in response.text.upper()

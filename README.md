@@ -1,40 +1,14 @@
-# Hospital Readmission Risk — A Production ML Service
+# Credit Default Risk — A Production ML Service
 
-> ## ⚠️ NOT FOR CLINICAL USE
+> ## ⚠️ NOT A CREDIT DECISIONING SYSTEM
 >
-> This is an **engineering demonstration of ML operations**, not a medical
-> device and not a clinical decision support tool. It is trained on a public
-> 1999–2008 hospital research dataset, has never been clinically validated, and
-> must never be used to inform patient care. Predictions it returns are
-> illustrative of a monitoring and deployment pipeline — nothing more.
+> This is an **engineering demonstration of ML operations**. It is trained on a
+> public 2007–2015 dataset from a single lender, has never been validated for
+> lending, and has had **no fair-lending or disparate-impact review**. It must
+> never be used to decide anyone's access to credit or the price of it.
 >
-> This disclaimer appears in the API responses, the model card, and the UI as
+> This disclaimer appears in every API response, the model card and the UI as
 > well as here. That repetition is deliberate.
-
----
-
-## Try it
-
-**Live endpoint:** https://readmission-risk-service.onrender.com
-
-```bash
-curl https://readmission-risk-service.onrender.com/v1/model
-curl -X POST https://readmission-risk-service.onrender.com/v1/predict   -H "Content-Type: application/json"   -d '{"features": {...}}'          # see /docs for the full schema
-```
-
-Interactive API docs at [`/docs`](https://readmission-risk-service.onrender.com/docs),
-a UI with a non-dismissable disclaimer at
-[`/`](https://readmission-risk-service.onrender.com/), Prometheus metrics at
-[`/metrics`](https://readmission-risk-service.onrender.com/metrics).
-
-The model artifact lives in a separate
-[Hugging Face Model repo](https://huggingface.co/nehabharti0802/readmission-risk-model)
-and is downloaded at boot, so the binary never enters git.
-
-> **Free tier, stated honestly:** the service sleeps after 15 minutes idle. The
-> first request after a sleep pays a cold start of roughly a minute. It is a
-> demo endpoint, not the monitoring substrate — that runs locally on compose,
-> because a Render free instance has no persistent disk.
 
 ---
 
@@ -44,57 +18,63 @@ Most ML portfolios prove someone can *train* a model. This one exists to prove
 something scarcer: that the model can be **operated**.
 
 So the priority is inverted on purpose. The model is deliberately boring — a
-regularised logistic regression — and the operations are the product:
-monitoring, drift detection, calibration, retraining with promotion gates,
-canary rollout, tested rollback, and an incident runbook.
+calibrated logistic regression — and the operations are the product:
+monitoring, drift detection, calibration-gated retraining, canary rollout,
+tested rollback, and an incident runbook.
 
 A well-operated logistic regression is a better artifact than an unmonitored
 gradient-boosted ensemble. Any effort that would go into squeezing out accuracy
 points goes into the observability and retraining layers instead.
 
-### Why hospital readmission, and why this dataset
+### Why credit default
 
-The widely-circulated symptom-to-disease datasets are synthetically generated
-and trivially separable — a decision tree reaches near-100% accuracy on them,
-which is a red flag rather than a result.
+One requirement decided the domain. The project's central control is a
+promotion gate that **blocks a challenger which ranks better but calibrates
+worse**. That argument only has force where someone acts on the probability
+*as a number* — and in credit, the probability is literally the price:
 
-This project uses **Diabetes 130-US Hospitals (UCI #296)**: 101,766 real
-inpatient encounters across 130 hospitals, 1999–2008. Real missingness, real
-class imbalance (~11% positive), real fairness dimensions, and a published
-performance ceiling around ROC-AUC 0.65–0.68.
+> expected loss = probability of default × exposure × loss given default
 
-That modest ceiling is a **feature, not a limitation.** A model that cannot be
-made excellent is a model that must be carefully operated, which is the entire
-point.
+A miscalibrated probability is a mispriced loan. The calibration gate stops
+being an ethical nicety and becomes the thing protecting the business.
+
+**Lending Club's accepted-loan book:** 2,260,701 loans issued 2007–2018, cut to
+**672,379 matured loans, 2007-06 to 2015-12**, with a **14.8%** default rate. It
+is real, messy, genuinely imbalanced, and modestly predictable — ROC-AUC near
+0.70 is close to the published range for this task. See
+[ADR 0003](docs/DECISIONS/0003-dataset-selection.md) for the datasets rejected
+and why.
 
 ### What the audit found
 
-The [data audit](docs/DATA_AUDIT.md) is generated from the code, not written by
-hand. Four findings changed the pipeline:
+The [data audit](docs/DATA_AUDIT.md) is generated from code, not written by
+hand. Five findings changed the pipeline, and each is a number rather than a
+claim:
 
-- **A deterministic label leak.** 1,652 expired-discharge encounters contain
-  **exactly zero** positive labels — a dead patient cannot be readmitted, so a
-  model would learn `died → not readmitted` from the discharge code. Removed.
-  Hospice discharges are excluded too, but for a *different* reason: they are
-  not deterministic (5.6% positive), so calling them leakage would overstate it.
-- **The time proxy holds — verified, not assumed.** This dataset has no
-  timestamp column at all. 5 of 8 independent signals shift monotonically across
-  `encounter_id`, and rosiglitazone prescribing shows a sharp
-  **7.7× discontinuity at the 80th percentile** — the 2007 Avandia safety
-  collapse. The ordering reproduces a *dated real-world event*, which is far
-  stronger evidence than a trend test. See
-  [ADR 0004](docs/DECISIONS/0004-temporal-split-proxy.md).
-- **Right-censoring at the tail.** A first encounter can only be labelled
-  positive if a later encounter exists in the data. The positive rate collapses
-  56% in the final 5% of the ordering — labels are *missing, not negative*. A
-  censoring buffer now discards that region before splitting.
-- **`payer_code` is time-confounded, not merely missing.** Capture goes from
-  100% missing to 14% across the period. Under a chronological split the model
-  would learn it as a proxy for *era*. Dropped.
-
-The dataset is not trivially separable: an unconstrained decision tree reaches
-**0.519 test ROC-AUC**. On the synthetic symptom-to-disease datasets the same
-tree reaches ~100%, which is precisely why those datasets prove nothing.
+- **A deterministic leak, demonstrated.** Thirty-one columns are knowable only
+  after a loan has run. Training on them reaches **ROC-AUC 0.9983** against an
+  honest ceiling near 0.70. Of the 80,312 loans with `recoveries > 0`,
+  **100.00%** are defaults — recoveries is money clawed back *after* a default,
+  so a non-zero value *is* the label. These columns look like ordinary loan
+  attributes, which is exactly why they are dangerous.
+- **Right-censoring dominates the recent years.** 40.4% of loans are
+  unresolved (38.9% still Current, the rest late or in grace), and the resolved fraction collapses from 100% (2007–2013) to 11.4%
+  (2018). The 2018 default rate also *falls* — survivorship among fast
+  resolvers, not better lending. Requiring the full term to have elapsed moves
+  the positive rate from **0.1998 to 0.1481**: skipping it overstates default
+  by 35% relative.
+- **The label leaked back in as a feature.** `loan_status` is the column the
+  target is derived from, so it predicts it perfectly. It survived the first
+  pass because the data dictionary calls it a loan attribute — which it is,
+  right up until you make it the label. *Deriving a target creates a leak that
+  did not exist before.*
+- **33 rows are not loans.** The file ends in export footers — text like
+  `"Total amount funded in policy code 1: 6417608175"` sitting in the `id`
+  column with every other field empty. They are now removed by a rule that
+  names them, rather than vanishing incidentally into the label filter.
+- **The problem is genuinely hard.** An unconstrained decision tree, 66 deep
+  with 45,210 leaves, scores **1.000 on train and 0.5335 on test**. It memorises
+  everything and generalises almost nothing.
 
 ---
 
@@ -169,22 +149,50 @@ PR-AUC** than the incumbent — most promotion pipelines would ship it:
 $ uv run mlservice retrain gates --challenger challenger.json --incumbent champion.json
 
   BLOCKED  --  blocked by: calibration
-        pass  performance    PR-AUC 0.1434 >= 0.1184 (incumbent 0.1234 - 0.005 margin)
-        FAIL  calibration    Brier ratio 1.1500 > 1.02 AND ECE 0.0800 > 0.05
-        pass  subgroup       worst gap -0.2323 vs incumbent -0.2323 (+0.0% relative)
-        pass  behavioral     20/20 behavioural tests passed
+        pass  performance    PR-AUC 0.2923 >= 0.2673 (incumbent 0.2723 - 0.005 margin)
+        FAIL  calibration    Brier ratio 1.1501 > 1.02 AND ECE 0.0800 > 0.05
+        pass  subgroup       worst gap -0.2926 vs incumbent -0.2926 (+0.0% relative, limit +20%)
+        pass  behavioral     25/25 behavioural tests passed
         pass  operational    artifact loads and matches the serving contract
         pass  data_quality   training data passed its quality checks
 ```
 
-For a health-adjacent task, a probability you cannot trust cannot support a
-decision. If the model says 30% it should be right about 30% of the time — and
-when that breaks, everyone downstream who reasoned about the number is wrong in
-a way no ranking metric will show.
+A lender prices loans off the probability. A model that ranks borrowers better
+but systematically misstates *how likely* each is to default misprices every
+loan it touches — while every ranking metric improves.
 
-`promote` then refuses the blocked decision, and the serving alias is untouched.
+`promote` then refuses the blocked decision and the serving alias is untouched.
 There is deliberately **no `--force`**: a promote command with a bypass is a
 promote command with no gates.
+
+### It beats the lender — narrowly, and that is stated
+
+The strongest baseline is not a strawman. `int_rate` is the price Lending Club
+set *after running its own underwriting model*, so ranking by it asks whether
+this model beats the incumbent lender's judgment:
+
+| | PR-AUC | 95% CI |
+|:--|--:|:--|
+| Prevalence floor | 0.1471 | — |
+| `int_rate` — the lender's own priced risk | 0.2529 | [0.2486, 0.2575] |
+| **Champion** | **0.2723** | **[0.2676, 0.2769]** |
+
+Non-overlapping intervals, so the win is real. It is also **0.019** — and part
+of the champion's skill is the lender's, because their grade carries the two
+largest coefficients in the model. See
+[ADR 0009](docs/DECISIONS/0009-lender-grade-as-a-feature.md).
+
+### The fairness finding is in the coefficients, not the footnotes
+
+Four of the ten largest coefficients are `addr_state` dummies. The worst
+subgroup recall gap — **−0.293, New Hampshire** — therefore falls on a feature
+the model structurally relies on. Geographic risk pricing is exactly the terrain
+fair-lending law governs, because location correlates with the protected
+characteristics this data deliberately omits.
+
+This model has had no disparate-impact review. The [model card](docs/MODEL_CARD.md)
+says so in its fairness section, reports all 59 analysable subgroups, and does
+not soften any of them.
 
 ### The rollback path is exercised, not asserted
 
@@ -197,77 +205,198 @@ $ uv run mlservice retrain verify-rollback
   VERIFIED  alias moved 1 -> 2 and back to 1
 ```
 
-This runs as a **required CI check** against a real MLflow registry.
-
-It exists in this form because the first version of it passed while proving
-nothing: it promoted the version that was *already serving* and reported
-`promote 2 → 2, rollback 2 → 2, VERIFIED: True`. The alias never moved. A
-verification that cannot fail is decoration — see
+A **required CI check** against a real MLflow registry. It exists in this form
+because its first version passed while proving nothing — it promoted the version
+already serving and reported `promote 2 → 2, VERIFIED: True`. A verification
+that cannot fail is decoration. See
 [ADR 0008](docs/DECISIONS/0008-promotion-gates-and-rollback.md).
 
-### Drift thresholds are derived from data, not chosen
+### Drift thresholds are measured, and they caught our own pipeline
 
-Arbitrary thresholds are the most common sign that monitoring was copied rather
-than reasoned about. Each of the 43 per-feature thresholds here is the **99th
-percentile of that feature's PSI between stable training windows**, clamped to
-[0.10, 0.25].
+Each of the 64 per-feature thresholds is the **99th percentile of that feature's
+PSI between consecutive stable training windows**, clamped to [0.10, 0.25].
 
-So every threshold answers *"why this number?"* with **"because this feature
-moved that much between windows we accepted only 1% of the time"** — see
-[ADR 0007](docs/DECISIONS/0007-drift-thresholds.md).
+Getting that right took two attempts, and the first failure is the more
+instructive one. `issue_d` is a date stored as a **string** (`"Dec-2018"`), so
+sorting it ordered the windows *alphabetically* — Apr, Aug, Dec, Feb, Jan — and
+every threshold was the churn between months adjacent in the alphabet. Nothing
+failed. The numbers were plausible, the dashboards were green, and the defect
+was only provable by reproducing the recorded PSI values from a lexicographic
+sort. Ordering now goes through one function that parses first, and three call
+sites can no longer choose the wrong one.
+
+Corrected, four features hit the ceiling — and the interesting column is the
+median, not the p99:
+
+| Feature | Median churn | p99 churn | What it is |
+|:--|--:|--:|:--|
+| `initial_list_status` | 0.0069 | 0.6726 | whole-loan listing introduced, late 2012 |
+| `term` | 0.0016 | 0.6169 | **our own maturity rule** |
+| `int_rate` | 0.0331 | 0.3339 | repricing, late 2011 |
+| `verification_status` | 0.0170 | 0.2644 | income verification tightened, late 2010 |
+
+These features are not "volatile". They are **flat, with one step change each**
+— which is what a policy change looks like, and what alphabetical adjacency had
+smeared into uniform noise. A single generic threshold either pages on every
+step or sleeps through everything else.
+
+**One of the four is not the lender. It is us.** The maturity rule
+(`issue_d + term <= observation_end`) censors by term, so 60-month loans stop
+at 2013-11 while 36-month loans run to 2015-12. Training data is 13.19%
+60-month; every 2015 window is structurally 0.00%. The monitor reported PSI
+**1.5738 on `term` in all 32 replay windows** — the identical value every time,
+because the gap is fixed by the pipeline rather than by the world.
+
+A permanent alarm carries no information, and this one was actively harmful:
+`int_rate`'s genuine 2014-to-2015 repricing was sitting underneath it. `term`
+is now excluded from monitoring with its reason, measurement and revisit
+condition recorded in config, and every report that omits it says so.
+
+The cost is stated rather than buried: **the model is trained on 60-month loans
+and evaluated on a split containing none of them**, so its behaviour on the
+longer term is unvalidated. See
+[ADR 0007](docs/DECISIONS/0007-drift-thresholds.md) and
+[ADR 0010](docs/DECISIONS/0010-term-censoring.md).
 
 ---
 
-## The dashboards
+## It is observable, and the dashboards are real
 
-Captured from a cold `docker compose up` — provisioned automatically, no manual
-clicking, against real traffic from `scripts/seed_predictions.py`.
+Three dashboards, generated from `configs/thresholds.yaml` so a panel's red
+band cannot drift away from the SLO it represents. Captured through Grafana's
+render API rather than by hand — a screenshot taken manually cannot be
+reproduced, and the previous set went stale through a whole domain change
+without anything noticing.
 
-### Golden signals — readable in ten seconds
+![Golden signals](docs/images/golden-signals.png)
 
-![Golden signals dashboard](docs/images/golden-signals.png)
+Traffic, latency, errors, saturation — the four questions, answerable in ten
+seconds, with the detail below for anyone who wants it.
 
-Four panels, traffic-light colouring, no jargon. Traffic, p99 latency, 5xx error
-rate, saturation against the measured knee.
+![Model health](docs/images/model-health.png)
 
-### Model health
+![Drift](docs/images/drift.png)
 
-![Model health dashboard](docs/images/model-health.png)
+**All 20 panels carry data, and that was verified by running each panel's own
+PromQL against Prometheus** rather than by looking at the pictures. That check
+is why the drift board above exists at all: all four of its panels had *never*
+rendered a value. The monitoring job wrote its metrics to a textfile for a
+collector that was not in the stack, and one panel queried a metric nothing had
+ever written. The dashboard was built in Phase 5 against a metric contract that
+Phase 6 then failed to honour, and being generated from config made it look
+finished.
 
-Note the **flagged rate of 26%** against a trained flagged rate of 32%. That
-number is a load-bearing check, not decoration: it is what the model does at its
-own operating point of 0.1011. When the service was accidentally serving the
-0.5 config placeholder, this panel read ~0% — a screening model flagging nobody
-while every other signal stayed green.
+---
 
-### Drift
+## A bad deploy is contained, not caught
 
-![Drift dashboard](docs/images/drift.png)
+```console
+$ bash scripts/k8s_rollback_demo.sh
 
-Per-feature PSI against per-feature thresholds, each derived from an empirical
-null rather than chosen.
+==> 5. Watch the rollout fail to progress
+error: timed out waiting for the condition
+    rollout stalled, as intended: the new pod never became Ready
+
+NAME                               READY   STATUS    RESTARTS
+credit-risk-api-556d8c5bf6-j8bwn   1/1     Running   0
+credit-risk-api-556d8c5bf6-kqksm   1/1     Running   0
+credit-risk-api-c5bfccbdf-dx4gp    0/1     Running   0     <-- broken, never Ready
+
+==> 6. Traffic is still served by the old ReplicaSet
+    12/12 probes returned 200 DURING the failed rollout
+```
+
+The broken pod has **zero restarts**. Liveness asks "is the process alive" and
+it is; readiness asks "can it serve" and it cannot, so the pod never enters the
+Service endpoints. Wire liveness to a readiness-style check and this becomes a
+crash loop — a blocked rollout that looks like an outage.
+
+The rollout timing out *is* the containment working.
+
+---
+
+## The canary changed the decision, not the score
+
+Nine stable replicas beside one canary gives 1-in-10 through a single Service.
+The canary serves a different operating point (0.15 against the champion's
+0.2070), so every response says which version produced it — no service mesh
+required.
+
+```console
+  track         n   share   flagged   mean p   p99 ms
+  stable      364   91.0%     23.9%   0.1427     83.2
+  canary       36    9.0%     50.0%   0.1432    146.5
+
+    FAIL  flagged-rate drift vs stable   23.9% -> 50.0% (+26.1 pts, limit +/-10)
+  VERDICT: BREACH -> roll the canary back
+```
+
+**Read the two middle columns together.** Mean predicted probability is
+identical to three decimals, because the weights *are* identical. The flagged
+rate doubles. A monitor watching the score distribution would have seen
+nothing at all — and the quantity that moved is the one a human feels as
+workload, or that a borrower feels as a declined application.
+
+**The first run measured 23% against a configured 10%**, because an HPA
+clamped the stable deployment back to its `maxReplicas: 4` seven seconds after
+it was scaled. Two things worth keeping: replica-ratio canary weighting is
+incompatible with an autoscaler on the stable deployment, since the autoscaler
+owns your denominator — and **an HPA that cannot read metrics is not inert**.
+This one reported `ScalingActive: False` and enforced its bounds anyway.
+
+Full captured output, including the rollback verified by re-measurement:
+[docs/K8S_ROLLBACK_DEMO.md](docs/K8S_ROLLBACK_DEMO.md).
+
+---
+
+## 99.7% of a prediction was one library call
+
+The first load test on the credit service came back about 3× slower than the
+medical one. Profiled step by step on a single row:
+
+| Component | Time |
+|:--|--:|
+| `QuantileTransformer` | **104 ms** |
+| everything else in preprocessing | 12 ms |
+| the model | **0.31 ms** |
+
+With `output_distribution="normal"`, sklearn calls `scipy.stats.norm.ppf` three
+times per column, so 162 times per request, and each call runs through scipy's
+generic distribution machinery. `scipy.special.ndtri` computes the same
+function in C. A subclass that uses it:
+
+- produces **bit-identical scores on all 162,236 test rows**, with the same
+  threshold and the same schema hash;
+- cuts a single prediction from **67 ms to 19 ms** and raises capacity from
+  **~20 to ~36 req/s**;
+- turns overload behaviour from *throughput falls* into *throughput holds*.
+
+It's guarded by tests that require exact equality against the parent class,
+because mirroring a private sklearn method is only safe if drift fails loudly.
+
+The re-measurement also showed the capacity alert had been dead for the whole
+migration. It fired at 42 req/s, 80% of the *medical* service's capacity, which
+the credit service can never reach. An existing test caught it as soon as the
+new measurement reached config.
+[LOAD_TEST_REPORT.md](docs/LOAD_TEST_REPORT.md) has the details, including the
+earlier report's attribution of this cost to the wrong step.
 
 ---
 
 ## Status
 
-**Phases 0–7 of 8 complete.** Phase 8 is the docs and the live endpoint.
+**Complete.** All eight phases, with every claim in the verification table
+below executed and observed rather than assumed.
 
-| Phase | Scope | State |
-|:--|:--|:--|
-| 0 | Foundation — config, logging, tooling | ✅ done |
-| 1 | Data audit and honest baseline | ✅ done |
-| 2 | Model, calibration, subgroups, model card | ✅ done |
-| 3 | FastAPI serving + prediction log | ✅ done |
-| 4 | Tests, behaviour suite, CI, load test | ✅ done |
-| 5 | Prometheus + Grafana observability | ✅ done |
-| 6 | Drift detection with calibrated thresholds | ✅ done |
-| 7 | Retraining, promotion gates, tested rollback | ✅ done |
-| 8 | Ship — runbook, live endpoint, docs | 🚧 in progress |
+**315 tests** — 221 unit, 29 contract, 25 behaviour, 21 data-quality, 19
+integration — plus a rollback cycle against a real registry. Lint, format,
+types and a Trivy container scan gate every pull request.
 
-**262 tests** — unit, contract, behaviour, data-quality, and a rollback cycle
-against a real registry. Lint, format, types and a Trivy container scan gate
-every PR.
+The integration suite skips unless a service is reachable, which is worth
+saying out loud: three of its tests asserted the wrong domain's disclaimer for
+an entire migration and passed by never running. Both disclaimer tests now read
+the phrase from the configured setting, with a positive control asserting the
+two agree.
 
 ---
 
@@ -284,7 +413,7 @@ uv run mlservice config      # show fully resolved configuration
 Reproduce the whole pipeline from scratch:
 
 ```bash
-uv run mlservice data download        # fetch from UCI, verify the checksum
+uv run mlservice data download        # fetch 1.6 GB, verify the SHA256
 uv run mlservice data audit           # regenerate docs/DATA_AUDIT.md
 uv run mlservice train run            # train, calibrate, evaluate, register
 uv run pytest                         # every suite
@@ -293,12 +422,12 @@ uv run pytest                         # every suite
 Drive the operations loop:
 
 ```bash
-uv run mlservice monitor check        # drift on the latest window
-uv run mlservice retrain check        # which triggers fired, and on what evidence
-uv run mlservice retrain evidence     # assemble what the gates judge
-uv run mlservice retrain gates ...    # run all six; exit 1 blocks
+uv run mlservice monitor check             # drift on the latest window
+uv run mlservice retrain check             # which triggers fired, and on what evidence
+uv run mlservice retrain evidence          # assemble what the gates judge
+uv run mlservice retrain gates ...         # run all six; exit 1 blocks
 uv run mlservice retrain verify-rollback   # exercise a real promote -> rollback
-uv run mlservice retrain history      # the audit trail
+uv run mlservice retrain history           # the audit trail
 ```
 
 Docker, `kind` and `kubectl` are needed for the serving stack, dashboards and
@@ -310,36 +439,40 @@ the rollout demo — see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 | Document | What it covers |
 |:--|:--|
-| [docs/DATA_AUDIT.md](docs/DATA_AUDIT.md) | Leakage hunt, missingness, imbalance, split verification |
+| [docs/DATA_AUDIT.md](docs/DATA_AUDIT.md) | Leakage, censoring, missingness, imbalance, the split — generated from code |
 | [docs/MODEL_CARD.md](docs/MODEL_CARD.md) | Intended use, **out-of-scope use**, metrics, calibration, subgroups |
 | [docs/MONITORING.md](docs/MONITORING.md) | Every metric and threshold, with its derivation |
 | [docs/LOAD_TEST_REPORT.md](docs/LOAD_TEST_REPORT.md) | Measured latency profile and where the service breaks |
 | [docs/RETRAINING_POLICY.md](docs/RETRAINING_POLICY.md) | Triggers, promotion gates, rollback |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | Incident response — what to do when it breaks |
-| [docs/K8S_ROLLBACK_DEMO.md](docs/K8S_ROLLBACK_DEMO.md) | Captured output from a real rollout failure and rollback |
+| [docs/K8S_ROLLBACK_DEMO.md](docs/K8S_ROLLBACK_DEMO.md) | Captured output from a real rollout failure, rollback and canary |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System diagram and component responsibilities |
-| [docs/DECISIONS/](docs/DECISIONS/) | Architecture decision records |
+| [docs/DECISIONS/](docs/DECISIONS/) | Ten architecture decision records |
 
 ---
 
 ## Responsible ML commitments
 
-These are load-bearing requirements of the project, enforced in code rather
-than promised in prose:
+Load-bearing requirements, enforced in code rather than promised in prose:
 
 - **Calibration is a deployment gate, not a report.** A model that ranks better
-  but calibrates worse is *blocked* from production. For anything
-  health-adjacent, a probability you cannot trust cannot support a decision —
-  see the calibration gate in [`configs/thresholds.yaml`](configs/thresholds.yaml).
-- **Subgroup performance is reported openly**, across race, gender and age
-  bands, including where the results are unflattering.
-- **Drift is labelled honestly.** Where drift is deliberately induced to
-  demonstrate detection, the documentation says so plainly rather than implying
-  a claim the data cannot support.
+  but calibrates worse is *blocked* from production, because in credit the
+  probability is the price.
+- **Subgroup performance is reported openly** across state, income band,
+  employment length and home ownership — the geographic and socioeconomic
+  proxies fair-lending analysis actually uses, since US credit data legally
+  excludes race and gender. Including where the results are unflattering.
+- **The same threshold applies to every group.** Per-group thresholds would
+  improve the numbers and would be disparate treatment — the thing the analysis
+  exists to detect, not to implement.
+- **Drift is labelled honestly.** Induced drift in the demo carries
+  `drift_origin: induced`; the genuine 2007–2015 shift carries `real`.
 - **Thresholds are derived, not chosen.** Every operational number carries a
-  provenance tag (`MEASURED`, `DERIVED`, `STANDARD`, `PLACEHOLDER`) and a
-  written justification.
-- **No patient-level data is ever committed.** See [data/README.md](data/README.md).
+  provenance tag and a written justification.
+- **Sensitive fields never reach application logs.** Identifiers,
+  quasi-identifiers like `emp_title` and `zip_code`, and `annual_inc` are
+  redacted — verified with a positive control, not assumed.
+- **No borrower-level data is committed.** See [data/README.md](data/README.md).
 
 ---
 
@@ -350,90 +483,53 @@ undisclosed is worse than reading them here.
 
 **About the data and model**
 
-- **The temporal split rests on a proxy.** This dataset has no timestamp column.
-  `encounter_id` ordering was *verified* rather than assumed — 5 of 8 signals
-  shift monotonically, and the 7.7× rosiglitazone discontinuity reproduces the
-  2007 Avandia withdrawal — but it remains a proxy, not a date.
-- **Single-institution, 1999–2008 data.** Nothing here transfers to a modern
-  hospital population without revalidation.
-- **The model is modest and meant to be.** PR-AUC 0.123 against a 7.6%
-  prevalence, ROC-AUC 0.616. That is near the published ceiling for this task.
-  Chasing it higher would invert the point of the project.
-- **Subgroup disparities exist and are not fixed.** The worst recall gap is
-  -0.232. The subgroup gate prevents it *widening*; it does not claim fairness.
-  The [model card](docs/MODEL_CARD.md) reports every group.
-- **No clinical validation of any kind.** See the disclaimer at the top.
+- **Repeat borrowers cannot be excluded.** `member_id` is null for every row, so
+  the same person may appear in both train and test. Deduplicating by borrower is
+  the standard defence and it is simply unavailable; held-out metrics are
+  inflated to whatever extent repeat borrowing occurs.
+- **The model inherits the lender's judgment.** Lending Club's own grade carries
+  the two largest coefficients. The model beats their pricing by 0.019 PR-AUC —
+  real, narrow, and partly theirs.
+- **No fair-lending review has been done.** Geography is a top-ten signal and the
+  worst subgroup gap falls on a state. That work would be mandatory before any
+  real use.
+- **Training is dominated by two years.** 2013–2014 are 43.7% of all loans;
+  2007–2011 only 6.4%. The model knows little about crisis-era lending.
+- **One platform, 2007–2015, US unsecured personal loans only.** It does not
+  transfer to another lender, whose grades mean something different or do not
+  exist.
+- **Provenance rests on a mirror.** Lending Club withdrew the official download.
+  The SHA256 makes that acceptable — a changed mirror fails loudly — but the
+  original source is gone.
 
 **About what has and has not been run**
 
 | Claim | Status |
 |:--|:--|
-| Promotion gates block a bad model | ✅ demonstrated on the real champion |
+| Promotion gates block a bad model | ✅ demonstrated on the credit champion |
 | Model rollback (registry alias flip) | ✅ verified in CI against a real registry |
-| Drift detection on real and induced drift | ✅ both, with `drift_origin` labelled |
-| Latency profile | ⚠️ measured, but load generator was co-located — `remeasure_required: true` |
 | Container actually serves predictions | ✅ verified end-to-end; regression-tested in CI |
-| Dashboards provision from a cold start | ✅ all three, screenshots above |
-| Canary rollout | ✅ **run on kind** — 10.0% split measured, caught a regression latency/error gates missed, rolled back ([captured](docs/K8S_ROLLBACK_DEMO.md#7-canary-rollout--captured-run)) |
-| `kubectl rollout undo` | ✅ **run on kind** — broken deploy contained, 12/12 probes served, [captured output](docs/K8S_ROLLBACK_DEMO.md) |
-| Live public endpoint | ✅ **live** at [readmission-risk-service.onrender.com](https://readmission-risk-service.onrender.com) — serving the trained threshold 0.1011, 17.6 ms. HF Spaces were the original target until Hugging Face began charging for Docker Spaces (a 402 from their API, 2026-09-04) |
-| Model artifact published | ✅ [live on Hugging Face](https://huggingface.co/nehabharti0802/readmission-risk-model) with its serving contract |
-| End-to-end unattended retrain | ✅ **ran in CI** — retrained from raw data, collected evidence, all six gates passed, rollback path verified |
-
-Everything above was written before any of it had run. Installing Docker and
-running it all found **thirteen real defects** — a container that could never
-serve a model, a dashboard panel showing a stale red error rate through a
-healthy period, five separate instances of a decision threshold falling back to
-a placeholder, an HPA silently capping a canary's traffic share, a `--json` flag
-whose output could not be redirected because the logs shared stdout. Each is
-recorded in the commit that fixed it and in
-[docs/K8S_ROLLBACK_DEMO.md](docs/K8S_ROLLBACK_DEMO.md).
-
-**None were visible from reading the code**, and most lived in the same place:
-where the tests stopped and the real invocation began. Unit tests exercised the
-code; nothing exercised the *program*, the *container*, or the *workflow* until
-each was actually run.
-
-That is the argument for this table existing at all. Every ✅ here means
-something was executed and observed, not that it looked correct.
-
-**Deploying the live endpoint.** The artifact is already published and the
-image is built and verified. What remains is connecting the host.
-
-Hugging Face was the original target. It now requires a PRO subscription for
-Docker Spaces — confirmed by a 402 straight from their API on 2026-09-04:
-*"Static Spaces are free for everyone, but hosting Gradio and Docker Spaces on
-free cpu-basic requires a PRO subscription."* The project's constraint is a $0
-endpoint, so the fallback the plan documented became the primary.
-
-[`render.yaml`](render.yaml) is a Render Blueprint: free tier, Docker, no credit
-card. Connect the repo at render.com and it reads that file. The service
-downloads the model from the
-[HF Model repo](https://huggingface.co/nehabharti0802/readmission-risk-model) at
-boot, so the binary never enters git — the same artifact-store/runtime split the
-MLflow path uses, and the reason
-[`Dockerfile.hf`](deploy/docker/Dockerfile.hf) reads its port from the
-environment rather than hardcoding one.
-
-Free-tier honesty: the service sleeps after 15 minutes idle and the next request
-pays a ~1 minute cold start.
-
-**Induced vs real drift.** Where drift is deliberately induced to demonstrate
-detection, every report carries `drift_origin: induced` and the docs say so. The
-genuine 1999→2008 shift in medication mix and specialty recording is labelled
-`real`. The two are never conflated.
+| The UI's own payload validates | ✅ replicated the page's JavaScript against the real API |
+| End-to-end unattended retrain | ✅ ran in CI — retrained, gated, rollback verified |
+| Every dashboard panel carries data | ✅ each panel's own PromQL run against Prometheus, 20/20 |
+| Bad deploy contained on Kubernetes | ✅ kind, 12/12 probes 200 during a failed rollout |
+| Canary split and breach evaluation | ✅ 8.7% measured at 9:1; breach fired on flagged-rate drift |
+| Canary rollback | ✅ by hand, verified by re-measurement — **not** automated |
+| Latency profile | ⚠️ re-measured with the API containerised, but the load generator is still co-located — p99 ranged 100–430 ms across identical runs, so absolutes are an upper bound |
 
 ---
 
 ## Data handling
 
-The UCI dataset is public and de-identified, but this repository still never
-commits row-level records, model binaries, or MLflow artifact stores. Data is
-fetched by script and verified against `data/checksums.txt`, which keeps the
-pipeline reproducible without putting clinical records in git history.
+The dataset is public, but this repository still never commits borrower-level
+records, model binaries, or MLflow artifact stores. Data is fetched by script
+and verified against `data/checksums.txt`. The model artifact lives in a
+separate Hugging Face Model repo and is downloaded at boot, so the binary never
+enters git — the same artifact-store/runtime split the MLflow path uses.
 
 ---
 
 ## Licence
 
-[MIT](LICENSE). The dataset carries its own terms — see [data/README.md](data/README.md).
+[MIT](LICENSE). The dataset carries its own terms — see
+[data/README.md](data/README.md).

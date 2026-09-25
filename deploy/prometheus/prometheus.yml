@@ -28,6 +28,26 @@ scrape_configs:
         labels:
           component: api
 
+  # Drift metrics come from `mlservice monitor check`, which is a periodic
+  # batch job with no port to scrape. It writes a textfile
+  # (data/monitoring/drift_metrics.prom) and node_exporter's textfile
+  # collector serves it.
+  #
+  # Deliberately not a Pushgateway: a pushgateway keeps serving the last
+  # value forever after the job stops, so a dead monitoring job looks like a
+  # permanently healthy one. A file has an mtime, and the staleness alert
+  # below is written against it.
+  #
+  # This job did not exist until 2026-09-23. The drift dashboard was built in
+  # Phase 5 against a metric contract that Phase 6's job then wrote to a file
+  # nothing scraped, so all four of its panels had never rendered a value.
+  - job_name: drift-textfile
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          component: monitoring-job
+
 # Alertmanager is deliberately not wired up. Alert *rules* are the artifact
 # worth demonstrating — they encode the thresholds and their reasoning. Routing
 # them to a paging provider adds a dependency and demonstrates nothing further

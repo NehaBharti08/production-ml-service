@@ -32,7 +32,7 @@ from mlservice.logging_ import configure_logging, get_logger, request_context
 
 app = typer.Typer(
     name="mlservice",
-    help="Readmission risk service — data, training, serving and monitoring.",
+    help="Credit default risk service — data, training, serving and monitoring.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -79,7 +79,8 @@ def data_download(
     with request_context():
         result = download(force=force)
     typer.secho(
-        f"  OK    {result.archive.name} ({'cached' if result.was_cached else 'downloaded'})",
+        f"  OK    {result.path.name} ({'cached' if result.was_cached else 'downloaded'}), "
+        f"{result.size_mb} MB",
         fg=typer.colors.GREEN,
     )
     typer.echo(f"        sha256 {result.sha256}")
@@ -124,14 +125,36 @@ def data_audit(
             reference.mkdir(parents=True, exist_ok=True)
             split_result.train.to_parquet(reference / "reference_window.parquet", index=False)
 
-    proxy = report.time_proxy
-    colour = typer.colors.GREEN if proxy["passed"] else typer.colors.YELLOW
+    cov = report.time_coverage
     typer.secho(
-        f"  {'OK  ' if proxy['passed'] else 'WARN'}  time proxy: {proxy['claim']}",
-        fg=colour,
+        f"  OK    split on {cov['column']}, a real date "
+        f"({cov['range']['start']} to {cov['range']['end']})",
+        fg=typer.colors.GREEN,
         bold=True,
     )
-    typer.echo(f"        {proxy['n_trending']}/{proxy['n_signals']} signals trend monotonically")
+
+    # The censoring table is the headline finding, so it is printed rather
+    # than left in the JSON for someone to notice.
+    cen = report.censoring
+    typer.echo(f"        {cen['unresolved_pct_overall']}% of loans are still unresolved")
+    recent = sorted(cen["by_year"].items())[-3:]
+    for year, stats in recent:
+        typer.echo(
+            f"          {year}: {stats['resolved_pct']:>5}% resolved  "
+            f"(default rate of those: {stats['default_rate_of_resolved']})"
+        )
+
+    leak = report.leakage_demonstration
+    typer.secho(
+        f"  LEAK  post-origination columns reach ROC-AUC "
+        f"{leak['roc_auc_with_leakage']} vs an honest ~{leak['honest_ceiling']}",
+        fg=typer.colors.YELLOW,
+        bold=True,
+    )
+    typer.echo(
+        f"        recoveries > 0: {leak['recoveries_positive_n']:,} loans, "
+        f"{100 * leak['recoveries_positive_default_rate']:.2f}% default"
+    )
 
     sep = report.separability
     typer.secho(
@@ -241,9 +264,12 @@ def monitor_replay(
     induce_drift: Annotated[
         bool, typer.Option("--induce-drift", help="Deliberately manipulate later windows.")
     ] = False,
-    inducer: Annotated[
-        str, typer.Option("--inducer", help="age | utilisation | specialty")
-    ] = "age",
+    # These named medical features until the domain changed, and the default
+    # "age" was not even a registered inducer — `--induce-drift` with no
+    # explicit choice raised before it did anything. replay.INDUCERS is the
+    # authority, and its error lists the valid names; this stays a plain string
+    # so the module keeps its lazy import.
+    inducer: Annotated[str, typer.Option("--inducer", help="grade | leverage | purpose")] = "grade",
     window_rows: Annotated[int | None, typer.Option("--window-rows")] = None,
 ) -> None:
     """Replay windows through the drift detectors.
@@ -269,7 +295,7 @@ def monitor_replay(
         )
     else:
         typer.secho(
-            "  NOTE  no manipulation — any drift below is real change in the 1999-2008 data",
+            "  NOTE  no manipulation — any drift below is real change in the 2007-2015 data",
             fg=typer.colors.CYAN,
         )
 
@@ -302,7 +328,12 @@ def monitor_check() -> None:
     from mlservice.monitoring import reports as reports_mod
 
     with request_context():
-        records = prediction_log.read_records()
+        # join_outcomes, not read_records: the observed labels live in a second
+        # file and are joined on prediction_id. Reading only the predictions
+        # meant `outcome_label` was never present, so the label-drift branch
+        # could not run and the rolling PR-AUC panel had no source — on a
+        # dashboard whose purpose is to show whether the model is still good.
+        records = prediction_log.join_outcomes()
         if not records:
             typer.secho(
                 "  note  prediction log is empty — nothing to check", fg=typer.colors.YELLOW
@@ -311,9 +342,71 @@ def monitor_check() -> None:
 
         import pandas as pd
 
-        frame = pd.DataFrame([r["features_raw"] for r in records])
         reference = reports_mod.load_reference()
-        report = drift_mod.analyse_window(reference=reference, current=frame)
+        reference_hash = str(reference.attrs.get("feature_schema_hash", "unknown"))
+
+        # Keep only records written under the reference's feature schema.
+        #
+        # This used to be `pd.DataFrame([r["features_raw"] for r in records])`
+        # over the WHOLE log, and the hash each record carries was dropped on
+        # the floor. After the domain change the log held 3,127 readmission
+        # records beside 1,451 credit ones, so every categorical was compared
+        # against categories it had never seen and PSI pinned at its ~10 cap on
+        # all nine of them. The report called that drift.
+        #
+        # prediction_log's own docstring promises this hash is stored per
+        # record so "the drift report" cannot "silently lie". It was stored.
+        # Nothing read it.
+        usable = [r for r in records if r.get("feature_schema_hash") == reference_hash]
+        skipped = len(records) - len(usable)
+        if skipped:
+            typer.secho(
+                f"  note  {skipped} of {len(records)} records were written under a "
+                f"different feature schema and are not comparable — excluded",
+                fg=typer.colors.YELLOW,
+            )
+        if not usable:
+            typer.secho(
+                f"  FAIL  no records match the reference schema {reference_hash}. "
+                "Comparing across a schema change is meaningless, so there is "
+                "nothing to report rather than something misleading.",
+                fg=typer.colors.RED,
+                bold=True,
+            )
+            raise typer.Exit(code=1)
+
+        # The most recent window, which is what this command claims to analyse.
+        # It previously took every record ever logged, so the "window" grew
+        # without bound and old traffic diluted anything recent.
+        window_rows = get_thresholds().model_dump()["drift"]["alert"]["data_drift"][
+            "window_size_rows"
+        ]
+        window = usable[-window_rows:]
+
+        frame = pd.DataFrame([r["features_raw"] for r in window])
+        # Stamped from the records themselves. analyse_window defaults a
+        # missing hash to the reference's, which makes `comparable` true
+        # whatever the window holds — a guard whose default is "pass".
+        frame.attrs["feature_schema_hash"] = reference_hash
+
+        matured = pd.DataFrame(
+            [
+                {
+                    "outcome_label": r["outcome_label"],
+                    "predicted_proba": r["predicted_proba"],
+                    "outcome_timestamp": r.get("outcome_timestamp"),
+                }
+                for r in window
+                if r.get("outcome_label") is not None
+            ]
+        )
+
+        report = drift_mod.analyse_window(
+            reference=reference,
+            current=frame,
+            matured=matured,
+            baseline_pr_auc=reports_mod.baseline_pr_auc(),
+        )
         path = drift_mod.save_report(report)
         reports_mod.export_to_prometheus(report)
 

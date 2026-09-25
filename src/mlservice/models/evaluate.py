@@ -1,19 +1,23 @@
-"""Evaluation for imbalanced clinical prediction.
+"""Evaluation for imbalanced credit risk prediction.
 
 Metric choices are not neutral here, so each is justified:
 
-*   **PR-AUC is the headline, not ROC-AUC.** At a ~7.6% positive rate, ROC-AUC
+*   **PR-AUC is the headline, not ROC-AUC.** At a 14.8% default rate, ROC-AUC
     is dominated by the large negative class: a model can move ROC-AUC
-    substantially while barely changing what happens to the patients who
-    actually get readmitted. PR-AUC responds to precision and recall on the
-    minority class, which is the question being asked.
+    substantially while barely changing what happens to the borrowers who
+    actually default. PR-AUC responds to precision and recall on the minority
+    class, which is the question being asked.
 *   **Bootstrap confidence intervals on everything.** Without them, "PR-AUC
-    improved from 0.086 to 0.094" is uninterpretable — on 13,298 rows with
-    ~1,000 positives the sampling variance is not small, and later phases
-    compare models on exactly this number.
+    improved from 0.2529 to 0.2723" is uninterpretable, and that particular
+    comparison decides whether this model beats the lender's own pricing. On
+    162,236 test rows with 23,863 positives the interval is [0.2676, 0.2769]
+    against the baseline's [0.2486, 0.2575] — non-overlapping, so the win is
+    real. Later phases compare challengers on exactly this number.
 *   **The operating threshold is chosen for a stated recall target**, on
-    validation, never 0.5. A 0.5 threshold on an 11%-prevalence problem flags
-    almost nobody, which is why the majority-class baseline gets 0% recall.
+    validation, never 0.5. The trained threshold is 0.2070; a 0.5 threshold on
+    a 14.8%-prevalence problem flags almost nobody, which is why the
+    majority-class baseline gets 0% recall — and why a 0.5 placeholder reaching
+    production is a silent failure rather than a loud one.
 """
 
 from __future__ import annotations
@@ -42,12 +46,13 @@ CI_LEVEL = 0.95
 
 #: Recall target the operating threshold is tuned to hit on validation.
 #:
-#: Chosen, not derived — and the reasoning is a resourcing argument rather than
-#: a statistical one. A readmission-risk score exists to direct a limited
-#: intervention (a follow-up call, a pharmacy review). Catching half the
-#: readmissions is a meaningful clinical yield, and at this prevalence a higher
-#: target flags so much of the population that the list stops being actionable.
-#: The precision this costs is reported openly next to it.
+#: Chosen, not derived — and the reasoning is an underwriting argument rather
+#: than a statistical one. A default-risk score exists to direct a limited
+#: review (a manual underwrite, a pricing adjustment, a declined application).
+#: Catching half the defaults is a meaningful yield, and at this prevalence a
+#: higher target flags so much of the book that the list stops being
+#: actionable. The precision this costs is reported openly next to it:
+#: measured, 25.9% of loans flagged and 72.8% of those flags wrong.
 TARGET_RECALL = 0.50
 
 
@@ -147,8 +152,8 @@ def choose_threshold(
     a threshold fitted to the very data used to report it.
 
     Among all thresholds meeting the recall target, the one with the highest
-    precision is selected — meeting the clinical requirement while flagging as
-    few patients as possible.
+    precision is selected — meeting the underwriting requirement while flagging
+    as few applications as possible.
     """
     precisions, recalls, thresholds = precision_recall_curve(y_true, y_score)
     # precision_recall_curve returns one more precision/recall than thresholds
@@ -228,8 +233,8 @@ def evaluate(
         false_positives=int(fp),
         true_negatives=int(tn),
         false_negatives=int(fn),
-        # How much better than flagging patients at random. The single most
-        # honest one-number summary of whether the model is worth running.
+        # How much better than flagging applications at random. The single
+        # most honest one-number summary of whether the model is worth running.
         lift_over_prevalence=round(precision / prevalence, 3) if prevalence else 0.0,
         flagged_rate=float(y_pred.mean()),
     )

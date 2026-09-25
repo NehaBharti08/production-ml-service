@@ -74,7 +74,7 @@ thing looked at.
 ## Consequences
 
 **The champion is a regularised logistic regression**, calibrated with isotonic
-regression fitted on validation, at a decision threshold of 0.1011 chosen for a
+regression fitted on validation, at a decision threshold of 0.2070 chosen for a
 50% recall target on validation.
 
 **Serving is cheap and inspectable.** Inference is a dot product; coefficients
@@ -85,12 +85,17 @@ debugging an incident at 2am.
 test recall 0.465. Reported in the model card rather than smoothed over, and it
 is exactly the behaviour Phase 6 monitoring exists to catch.
 
-**A documented fairness disparity ships with the model.** Recall is 0.311 for
-AfricanAmerican patients against 0.478 for Caucasian patients, and runs from
-0.233 to 0.692 across age bands. Measured, published in the model card, and
-gated against worsening in Phase 7 — but **not mitigated**, because the likely
-mechanism is unequal completeness of prior-utilisation records, which
-reweighting would obscure rather than fix.
+**A documented fairness disparity ships with the model.** Recall runs from
+0.186 (NH) to 0.725 (MS) across states — a 54.0 point spread — and from 0.205
+in the highest income quartile to 0.688 in the lowest, a 48.3 point spread.
+US credit data legally excludes race and gender, so these geographic and
+socioeconomic proxies are what disparate-impact analysis actually uses.
+
+Measured, published in the model card, and gated against worsening in Phase 7 —
+but **not mitigated**. Four of the ten largest coefficients are `addr_state`
+dummies, so the disparity falls on something the model structurally relies on;
+reweighting would obscure that rather than fix it. No disparate-impact review
+has been done, and that work would be mandatory before any real use.
 
 ## Revisit if
 

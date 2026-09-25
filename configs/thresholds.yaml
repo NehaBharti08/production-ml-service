@@ -52,8 +52,9 @@ slo:
 
   latency:
     provenance: MEASURED
-    source: "docs/LOAD_TEST_REPORT.md — Locust, 2026-08-18, host process, i5-12450H"
+    source: "docs/LOAD_TEST_REPORT.md — Locust, 2026-09-24, API in a container, i5-12450H"
     measured_in_phase: 4
+    remeasured: "2026-09-24, credit service, after the FastNormalQuantileTransformer fix"
 
     # Derivation rule, fixed in configs BEFORE any measurement was taken so the
     # numbers could not be reverse-engineered to whatever the service happened
@@ -63,42 +64,48 @@ slo:
     #     page_ms      = slo_p99_ms, breached for 5 consecutive minutes
     #     ticket_ms    = ceil(measured_p99 @ target_rps * 1.5), sustained 30m
     #
-    # That discipline earned its keep here: the plan estimated p50 of 4-8 ms and
-    # the measured p50 is ~130 ms, because the sklearn feature transform costs
-    # ~64 ms per CALL while the model itself costs ~1 ms.
+    # The first measurement (medical service) found the feature transform
+    # costing ~64 ms per CALL against ~1 ms for the model, and recorded it
+    # without attributing it further. On credit it was ~104 ms of a ~116 ms
+    # prediction, and profiling traced it to scipy.stats.norm.ppf being called
+    # three times per column inside QuantileTransformer. Replaced with the
+    # identical scipy.special.ndtri — bit-identical scores on all 162,236 test
+    # rows — and the single-row prediction went from 67 ms to 19 ms.
     derivation_rule: "slo = 2 x measured_p99 @ target_rps; page = slo for 5m; ticket = 1.5 x measured_p99 for 30m"
 
-    # 25 rps, not 50. The ramp sweep found the saturation knee between 20 and 40
-    # concurrent users: throughput INVERTED there (52.3 -> 47.6 req/s) while
-    # latency went from 139 ms to 522 ms. A target at the knee has no headroom,
-    # so this sits at roughly half of measured capacity.
-    target_rps: 25
-    measured_knee_rps: 52
+    # Half of measured capacity, as before. The ramp sweep plateaus at ~36
+    # req/s from 10 concurrent users up; 40 users no longer inverts throughput
+    # (it did before the fix, 19.9 -> 17.3 req/s), it only queues.
+    target_rps: 20
+    measured_knee_rps: 36
 
-    measured_p50_ms: 130
-    measured_p95_ms: 260
+    # Three 45 s runs at 4 users (19.6-23.3 req/s). p99 was 100, 430 and 350 ms
+    # — a 4x spread on the tail. The rule is applied to the MEDIAN run, not the
+    # best; the worst run's p99 (430) sits at 61% of the resulting SLO.
+    measured_p50_ms: 42
+    measured_p95_ms: 190
     measured_p99_ms: 350
+    measured_p99_runs_ms: [100, 430, 350]
 
-    slo_p99_ms: 700     # 2 x 350
-    slo_p95_ms: 520     # 2 x 260
+    slo_p99_ms: 700     # 2 x 350 — unchanged, re-derived rather than inherited
+    slo_p95_ms: 380     # 2 x 190 — the rule tightened this one (was 520)
     page_p99_ms: 700
     ticket_p99_ms: 525  # 1.5 x 350
 
     # IMPORTANT CAVEAT, recorded so nobody treats these as precise.
     #
-    # The load generator ran on the same 12-thread machine as the service, so
-    # every measurement includes contention between the two. Repeat runs varied
-    # by 2-3x depending on machine state (median 47 ms at 5 users in one sweep,
-    # 130 ms at 6 users in another). The RELATIVE shape — where the knee is, and
-    # that throughput inverts past it — is trustworthy because the sweep ran
-    # back to back under comparable conditions. The ABSOLUTE numbers are an
-    # upper bound, not a characterisation.
+    # The service now runs in its container, but the load generator is still
+    # on the same 12-thread machine, so every measurement includes contention
+    # between the two. The spread above is that contention showing. The
+    # RELATIVE results — where the knee is, whether throughput inverts, the
+    # before/after of the transformer fix measured back to back — are
+    # trustworthy. The ABSOLUTE numbers are an upper bound.
     #
-    # Re-measure with the service in a container and the generator off-box
-    # before treating these as a real SLO. Until then they are deliberately
-    # loose: a too-tight SLO derived from a contended measurement would page on
-    # healthy behaviour, which is worse than no SLO.
-    measurement_caveat: "load generator co-located with the service; 2-3x run-to-run variance; re-measure off-box"
+    # Re-measure with the generator off-box before treating these as a real
+    # SLO. Until then they are deliberately loose: a too-tight SLO derived from
+    # a contended measurement would page on healthy behaviour, which is worse
+    # than no SLO.
+    measurement_caveat: "service containerised; load generator still co-located; p99 spread 100-430 ms across runs; re-measure off-box"
     remeasure_required: true
 
   error_rate:
@@ -132,6 +139,38 @@ drift:
     binning: quantile               # equal-frequency, from the reference window
 
   # -------------------------------------------------------------------------
+  # Features excluded from drift monitoring, each with its reason.
+  #
+  # Hand-written, NOT regenerated by `monitor calibrate` — an exclusion is a
+  # judgement about why a signal is uninformative, and a judgement has to be
+  # argued rather than computed.
+  #
+  # The bar is deliberately high: a feature comes out only when the alarm is
+  # guaranteed to be uninformative by construction, not merely inconvenient.
+  # Excluding a feature because it is noisy would be switching off the smoke
+  # detector.
+  # -------------------------------------------------------------------------
+  not_monitored:
+    provenance: DERIVED
+    features:
+      term:
+        reason: >-
+          The maturity rule (issue_d + term <= observation_end) censors by
+          term, so 60-month loans stop appearing after 2013-11 while 36-month
+          loans continue to 2015-12. The training reference is 13.19%
+          60-month; every window drawn from 2015 is structurally 0.00%. PSI is
+          1.5738 in all 32 replay windows — the same value every time, because
+          the difference is fixed by the pipeline rather than by the world.
+          A permanent alarm carries no information and masks the real ones:
+          int_rate's genuine 2014-to-2015 repricing sat underneath this.
+        measured_psi: 1.5738
+        breaching_windows: "32/32"
+        revisit_if: >-
+          The observation window extends far enough for 60-month loans to
+          mature alongside 36-month ones, which would make the two populations
+          comparable again and this exclusion wrong.
+
+  # -------------------------------------------------------------------------
   # Per-feature thresholds, calibrated against an EMPIRICAL NULL.
   #
   # The credit-risk convention (PSI <0.1 stable / 0.1-0.2 moderate / >0.2
@@ -156,61 +195,82 @@ drift:
     generated_by: "mlservice.monitoring.null_calibration"
     calibration:
       n_null_windows: 20
-      window_rows: 1994
+      window_rows: 19467
       percentile: 99
       floor: 0.1
       ceiling: 0.25
-      n_clamped_to_floor: 37
-      n_clamped_to_ceiling: 2
-      n_unclamped: 4
+      n_clamped_to_floor: 54
+      n_clamped_to_ceiling: 4
+      n_unclamped: 6
 
     # Each value is that feature's OWN 99th-percentile PSI between
     # adjacent stable training windows, clamped to the credit-risk
     # convention. Regenerate with: uv run mlservice monitor calibrate
     thresholds:
-      A1Cresult: 0.1
-      acarbose: 0.1
-      acetohexamide: 0.1
-      admission_source_id: 0.25
-      admission_type_id: 0.151419
-      age: 0.1
-      change: 0.1
-      chlorpropamide: 0.1
-      diabetesMed: 0.1
-      diag_1: 0.1
-      diag_2: 0.1
-      diag_3: 0.1
-      discharge_disposition_id: 0.25
-      gender: 0.1
-      glimepiride: 0.1
-      glimepiride-pioglitazone: 0.1
-      glipizide: 0.1
-      glipizide-metformin: 0.1
-      glyburide: 0.1
-      glyburide-metformin: 0.1
-      insulin: 0.1
-      max_glu_serum: 0.1
-      medical_specialty: 0.24231
-      metformin: 0.1
-      metformin-pioglitazone: 0.1
-      metformin-rosiglitazone: 0.1
-      miglitol: 0.1
-      nateglinide: 0.1
-      num_lab_procedures: 0.168198
-      num_medications: 0.1
-      num_procedures: 0.1
-      number_diagnoses: 0.220989
-      number_emergency: 0.1
-      number_inpatient: 0.1
-      number_outpatient: 0.1
-      pioglitazone: 0.1
-      race: 0.1
-      repaglinide: 0.1
-      rosiglitazone: 0.1
-      time_in_hospital: 0.1
-      tolazamide: 0.1
-      tolbutamide: 0.1
-      troglitazone: 0.1
+      acc_now_delinq: 0.1
+      acc_open_past_24mths: 0.1
+      addr_state: 0.1
+      annual_inc: 0.1
+      application_type: 0.1
+      avg_cur_bal: 0.1
+      bc_open_to_buy: 0.1
+      bc_util: 0.1
+      chargeoff_within_12_mths: 0.1
+      collections_12_mths_ex_med: 0.1
+      credit_history_months: 0.1
+      delinq_2yrs: 0.1
+      delinq_amnt: 0.1
+      dti: 0.133973
+      emp_length: 0.1
+      fico_range_low: 0.1
+      grade: 0.1
+      home_ownership: 0.1
+      initial_list_status: 0.25
+      inq_last_6mths: 0.148541
+      installment: 0.130914
+      int_rate: 0.25
+      loan_amnt: 0.1
+      mo_sin_old_il_acct: 0.1
+      mo_sin_old_rev_tl_op: 0.1
+      mo_sin_rcnt_rev_tl_op: 0.1
+      mo_sin_rcnt_tl: 0.1
+      mort_acc: 0.1
+      mths_since_recent_bc: 0.1
+      mths_since_recent_inq: 0.1
+      num_accts_ever_120_pd: 0.1
+      num_actv_bc_tl: 0.1
+      num_actv_rev_tl: 0.1
+      num_bc_sats: 0.1
+      num_bc_tl: 0.1
+      num_il_tl: 0.1
+      num_op_rev_tl: 0.1
+      num_rev_accts: 0.1
+      num_rev_tl_bal_gt_0: 0.1
+      num_sats: 0.1
+      num_tl_120dpd_2m: 0.1
+      num_tl_30dpd: 0.1
+      num_tl_90g_dpd_24m: 0.1
+      num_tl_op_past_12m: 0.1
+      open_acc: 0.1
+      pct_tl_nvr_dlq: 0.1
+      percent_bc_gt_75: 0.1
+      pub_rec: 0.1
+      pub_rec_bankruptcies: 0.1
+      purpose: 0.217716
+      revol_bal: 0.103575
+      revol_util: 0.1
+      sub_grade: 0.131649
+      tax_liens: 0.1
+      term: 0.25
+      tot_coll_amt: 0.1
+      tot_cur_bal: 0.1
+      tot_hi_cred_lim: 0.1
+      total_acc: 0.1
+      total_bal_ex_mort: 0.1
+      total_bc_limit: 0.1
+      total_il_high_credit_limit: 0.1
+      total_rev_hi_lim: 0.1
+      verification_status: 0.25
 
   # -------------------------------------------------------------------------
   # Alert conditions
@@ -253,18 +313,46 @@ drift:
       provenance: DERIVED
       # Silent label-pipeline failure is the most common way monitoring dies:
       # nothing alerts, because nothing is being measured. This is the watchdog.
-      # 30d maturation + 7d slack for batch delivery.
-      max_hours_without_matured_label: 888
+      #
+      # It used to be "30d maturation + 7d slack" = 888 hours. Under the credit
+      # label that arithmetic gives 1096d + 7d = 26,472 hours — a watchdog with
+      # a three-year fuse, which is no watchdog.
+      #
+      # The arithmetic was wrong in kind, not just in size. Maturation is how
+      # long ONE loan takes to resolve; the watchdog needs to know how long the
+      # FLOW can stop. Loans are originated continuously, so loans reach term
+      # continuously too, and the question is how long a gap in arrivals is
+      # normal. Measured: the book spans 103 months and originates loans in
+      # all 103 — there is no empty month anywhere in it. From 2012 the
+      # thinnest month is 2,560 loans, about 85 a day, so loans reach term
+      # every day and matured labels should arrive every day.
+      #
+      # 7 days + 24h of batch slack, against an expected daily arrival. This
+      # is the flow rate, not the lag.
+      max_hours_without_matured_label: 192
+      basis: "arrival gap in matured labels, not the maturation lag itself"
+      measured: "103/103 months non-empty; >=2560 loans/month from 2012"
 
 # =============================================================================
 # 3. LABEL MATURATION
 # =============================================================================
 labels:
   provenance: STANDARD
-  # Structural, not chosen: the target IS "readmitted within 30 days", so a
-  # label cannot exist before 30 days have passed.
-  maturation_days: 30
-  source: "target definition — readmitted within 30 days of discharge"
+  # Structural, not chosen. A loan's outcome is not final until its term ends,
+  # so maturation is the TERM, not a constant:
+  #
+  #   36 months -> 1096 days   (92.36% of loans, 13.95% default)
+  #   60 months -> 1826 days   ( 7.64% of loans, 25.22% default)
+  #
+  # The 36-month figure is the planning number because it covers the large
+  # majority; the 60-month case is the one that makes the rule term-dependent,
+  # and that dependence has consequences recorded in
+  # docs/DECISIONS/0010-term-censoring.md.
+  maturation_days: 1096
+  maturation_days_by_term:
+    36: 1096
+    60: 1826
+  source: "loan term — the outcome is not final until the term ends"
 
   simulation:
     # The Phase 6 replay compresses the clock so maturation is demonstrable in
@@ -399,6 +487,6 @@ rollout:
     # where the container image itself is the problem.
     mechanisms:
       - "MLflow registry alias flip (champion -> previous version)"
-      - "kubectl rollout undo deployment/readmission-api"
+      - "kubectl rollout undo deployment/credit-default-api"
     max_seconds_to_rollback: 120
     require_tested_path: true

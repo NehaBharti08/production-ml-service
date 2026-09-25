@@ -25,61 +25,154 @@ logging:
   level: INFO
   format: json
   request_id_header: X-Request-ID
-  # Direct identifiers. Neither is a model feature; both would be a liability
-  # in an aggregated log store, so they never reach one.
+  # Never written to application logs. Restated for credit data when the domain
+  # changed, and worth recording WHY it had to be restated rather than merely
+  # edited: the old list named patient_nbr and encounter_id, and the default in
+  # config.py was updated first — but this file overrides it, so the resolved
+  # config kept redacting two fields that no longer existed. A privacy control
+  # protecting nothing, raising no error. Caught only by printing the resolved
+  # settings rather than trusting the edit.
+  #
+  #   direct identifiers        id, member_id
+  #   quasi-identifiers         zip_code, emp_title (job title + state is often
+  #                             a single person)
+  #   personal financial fact   annual_inc
+  #   free text                 desc, title (may contain any of the above)
   redact_fields:
-    - patient_nbr
-    - encounter_id
+    - id
+    - member_id
+    - zip_code
+    - emp_title
+    - annual_inc
+    - desc
+    - title
 
 data:
-  dataset_name: diabetes_130_us_hospitals
-  # Exact slug matters: UCI uses '+' for spaces but keeps literal hyphens in
-  # '130-us' and '1999-2008'. Getting it wrong returns a 404, not a redirect.
-  source_url: https://archive.ics.uci.edu/static/public/296/diabetes+130-us+hospitals+for+years+1999-2008.zip
-  target_column: readmitted
-  positive_label: "<30"
+  dataset_name: lending_club_accepted_2007_2018
 
-  # NOT a timestamp. This dataset has no date column at all; encounter_id is a
-  # sequence assigned at admission and is therefore a PROXY for time. Phase 1
-  # tests whether it actually carries time signal before any split trusts it.
-  # If that test fails, the claim downgrades from "temporal" to "ordered" and
-  # the README says so. See docs/DECISIONS/0004-temporal-split-proxy.md.
-  time_proxy_column: encounter_id
-  patient_id_column: patient_nbr
+  # Lending Club's accepted-loan book: 2,260,701 loans issued 2007-06 to
+  # 2018-12, with REAL issue dates. That last point is why this dataset was
+  # chosen over UCI's Taiwan credit-default set, which has richer demographics
+  # but no date column at all - every row there covers the same six months, so
+  # a chronological split is impossible and the drift story has nothing to
+  # stand on.
+  #
+  # PROVENANCE CAVEAT: Lending Club withdrew the official download, so this is
+  # a community mirror on the Hugging Face hub. The SHA256 below is what makes
+  # that acceptable - the bytes are pinned, so a changed or substituted mirror
+  # fails loudly instead of silently altering every number downstream. Treat
+  # the checksum as the source of truth, not the URL.
+  source_url: https://huggingface.co/datasets/codesignal/lending-club-loan-accepted/resolve/main/accepted_2007_to_2018Q4.csv
+  archive_name: lending_club_accepted.csv
+
+  # The label is derived, not read. loan_status has nine values; only some are
+  # terminal. See data.loan_status_* below.
+  target_column: loan_status
+  positive_label: charged_off
+
+  # A REAL date, not a proxy. The medical version of this project had to prove
+  # that an ID sequence carried time signal before it could split on it; here
+  # the column is simply a date, so the split is chronological by construction
+  # and the caveat disappears.
+  time_column: issue_d
+  time_format: "%b-%Y"
+
+  # Terminal outcomes. Everything else - Current, In Grace Period, Late - is
+  # UNRESOLVED and must not be treated as a negative.
+  loan_status_bad:
+    - "Charged Off"
+    - "Default"
+    - "Does not meet the credit policy. Status:Charged Off"
+  loan_status_good:
+    - "Fully Paid"
+    - "Does not meet the credit policy. Status:Fully Paid"
+
+  # RIGHT-CENSORING, and the single most important rule in this file.
+  #
+  # 38.9% of loans are still "Current". A loan issued in December 2018 has not
+  # had time to default, so its absence of default is not evidence of
+  # repayment. Measured by issue year, the resolved fraction collapses:
+  #
+  #     2007-2013  100.0% resolved
+  #     2016        67.5%
+  #     2017        38.2%
+  #     2018        11.4%   <- and its default rate FALLS to 15.8%,
+  #                            which is a selection artefact, not better lending
+  #
+  # So a loan is only usable once its full term has elapsed. The rule is stated
+  # rather than tuned: keep loans whose issue date plus term is at or before
+  # the last observation date in the file.
+  require_matured_term: true
+  observation_end: "2018-12-01"
+
+  # Columns known ONLY AFTER origination. Every one of these encodes the
+  # outcome to some degree, and `recoveries > 0` means the loan defaulted
+  # outright. This is the leakage trap practitioners actually fall into,
+  # because the columns look like ordinary loan attributes.
+  post_origination_columns:
+    - out_prncp
+    - out_prncp_inv
+    - total_pymnt
+    - total_pymnt_inv
+    - total_rec_prncp
+    - total_rec_int
+    - total_rec_late_fee
+    - recoveries
+    - collection_recovery_fee
+    - last_pymnt_d
+    - last_pymnt_amnt
+    - next_pymnt_d
+    - last_credit_pull_d
+    - last_fico_range_high
+    - last_fico_range_low
+    - debt_settlement_flag
+    - debt_settlement_flag_date
+    - settlement_status
+    - settlement_date
+    - settlement_amount
+    - settlement_percentage
+    - settlement_term
+    - hardship_flag
+    - hardship_type
+    - hardship_reason
+    - hardship_status
+    - hardship_start_date
+    - hardship_end_date
+    - payment_plan_start_date
+    - hardship_last_payment_amount
+    - pymnt_plan
+
+  # Free text and identifiers. Dropped for different reasons: ids carry no
+  # signal, urls are constant, and the text fields would turn a deliberately
+  # boring tabular model into an NLP project.
+  identifier_columns: [id, member_id, url, desc, emp_title, title, zip_code]
 
   train_fraction: 0.60
   val_fraction: 0.20
   test_fraction: 0.20
 
-  # 101,766 encounters span ~71,518 patients. Without this, the same patient
-  # lands on both sides of the split and every held-out number is inflated.
-  # Matches the Strack et al. (2014) protocol.
-  first_encounter_only: true
-
-  # Expired / hospice discharge codes. A patient who died cannot be readmitted,
-  # so the label is deterministic and the model would learn "died -> not
-  # readmitted". Verified against IDS_mapping.csv in Phase 1 before use.
-  expired_discharge_ids: [11, 13, 14, 19, 20, 21]
-
   random_seed: 42
 
 model:
-  name: readmission-risk
+  name: credit-default-risk
   serving_alias: champion          # flipping this alias is the rollback lever
   challenger_alias: challenger
   local_fallback: null
-  # PLACEHOLDER. Phase 2 selects this on the validation split for a stated
-  # recall target. 0.5 is a default, never a decision — an 11% base rate makes
-  # the naive threshold close to useless.
+  # PLACEHOLDER, and a dangerous one. Training selects the real threshold on
+  # the validation split (0.207 for the current champion) and writes it into
+  # metadata.json beside the artifact, which the loader reads FIRST. This
+  # value is served only if that contract is missing — and serving 0.5
+  # against a model tuned elsewhere has already happened five times in this
+  # project, each time returning 200s while flagging almost nobody.
   decision_threshold: 0.5
 
 mlflow:
   tracking_uri: http://localhost:5000
-  experiment_name: readmission-risk
+  experiment_name: credit-default-risk
   registry_uri: null               # defaults to tracking_uri
 
 api:
-  title: Hospital Readmission Risk API
+  title: Credit Default Risk API
   version: v1
   host: 0.0.0.0
   port: 8000

@@ -47,10 +47,11 @@ def candidates(seed: int) -> list[Candidate]:
 
     XGBoost is deliberately absent. The plan admitted it only on audit evidence
     of non-linear structure worth the operational cost, and the audit produced
-    the opposite: an unconstrained decision tree — which can represent arbitrary
-    interactions — reached 0.519 test ROC-AUC. There is no non-linear signal
-    going unexploited, so adding a gradient booster would buy dependency weight
-    and opacity for nothing. Recorded in docs/DECISIONS/0005-model-selection.md.
+    the opposite: an unconstrained decision tree — 66 deep with 45,210 leaves,
+    able to represent arbitrary interactions — memorised the training set
+    completely (1.000) and reached 0.5335 on test. There is no non-linear
+    signal going unexploited, so a gradient booster would buy dependency weight
+    and opacity for nothing. See docs/DECISIONS/0005-model-selection.md.
     """
     return [
         Candidate(
@@ -62,12 +63,16 @@ def candidates(seed: int) -> list[Candidate]:
         Candidate(
             name="logistic_l2",
             estimator=LogisticRegression(
-                penalty="l2",
+                # l1_ratio=0 rather than penalty="l2": sklearn 1.8 deprecated
+                # the penalty argument and removes it in 1.10. The warning
+                # surfaced on the first full training run, which is the point
+                # at which a deprecation is cheapest to fix.
+                l1_ratio=0,
                 C=1.0,
                 max_iter=2000,
-                # Weighting matters far more than the solver here: at a 7.6%
-                # positive rate, an unweighted fit optimises almost entirely for
-                # the negative class and produces a near-constant score.
+                # Weighting matters far more than the solver here: at a 14.8%
+                # positive rate, an unweighted fit optimises largely for the
+                # negative class and produces a compressed score range.
                 class_weight="balanced",
                 solver="lbfgs",
                 random_state=seed,
@@ -78,7 +83,7 @@ def candidates(seed: int) -> list[Candidate]:
         Candidate(
             name="logistic_l2_strong",
             estimator=LogisticRegression(
-                penalty="l2",
+                l1_ratio=0,
                 C=0.05,  # heavier regularisation
                 max_iter=2000,
                 class_weight="balanced",
@@ -170,8 +175,12 @@ def train_candidate(
         test_cal = calibration.expected_calibration_error(np.asarray(y_test), test_score)
         test_cal.method = method
 
+        # income_band is derived here rather than stored: it is a reporting
+        # slice, not a feature, and the model must not be handed a coarsened
+        # copy of annual_inc which it already has.
+        banded = subgroups.add_income_band(test)
         sub = subgroups.evaluate_subgroups(
-            test, np.asarray(y_test), test_score, threshold, schema.SUBGROUP_DIMENSIONS
+            banded, np.asarray(y_test), test_score, threshold, schema.SUBGROUP_DIMENSIONS
         )
 
         mlflow.log_params(
@@ -309,7 +318,18 @@ def run_training(register_model: bool = True) -> dict[str, Any]:
         title=f"Reliability — {champion.name} on the held-out test split",
     )
 
-    fallback = registry.save_local_fallback(champion_model)
+    # The contract is handed over explicitly. Reading it from
+    # reports/training_summary.json here would read the PREVIOUS run's file,
+    # because this run's summary is not written until the end of this function.
+    fallback = registry.save_local_fallback(
+        champion_model,
+        contract={
+            "champion": champion.name,
+            "champion_threshold": champion.threshold,
+            "feature_schema_hash": schema_hash,
+            "calibration_method": champion.calibration_method,
+        },
+    )
 
     version = None
     if register_model:

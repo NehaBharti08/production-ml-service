@@ -1,7 +1,7 @@
 [project]
 name = "mlservice"
 version = "0.1.0"
-description = "Production ML service for 30-day hospital readmission risk — an operations demonstration, not a clinical tool."
+description = "Production ML service for credit default risk — an operations demonstration, not a lending tool."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 license = { text = "MIT" }

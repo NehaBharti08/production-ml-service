@@ -146,5 +146,5 @@ make check      # lint + typecheck + tests
 ```
 
 Hooks enforce the rest. Two of them are not style tools and must not be
-disabled: `nbstripout` (a notebook output cell can contain patient rows) and
+disabled: `nbstripout` (a notebook output cell can contain borrower rows) and
 `detect-secrets`.

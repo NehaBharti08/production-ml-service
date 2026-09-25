@@ -55,7 +55,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Traffic"
         }
       ],
       "options": {
@@ -116,7 +117,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Latency p99"
         }
       ],
       "options": {
@@ -181,7 +183,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Error rate (5xx)"
         }
       ],
       "options": {
@@ -228,7 +231,7 @@
       "type": "stat",
       "id": 4,
       "title": "Saturation",
-      "description": "Request rate as a fraction of the measured saturation knee (~52 req/s). Past 100% throughput INVERTS: the service gets slower and less productive at once.",
+      "description": "Request rate as a fraction of the measured saturation knee (~36 req/s). Past 100% throughput INVERTS: the service gets slower and less productive at once.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -241,12 +244,13 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total[5m])) / 52",
+          "expr": "sum(rate(http_requests_total[5m])) / 36",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Saturation"
         }
       ],
       "options": {

@@ -55,7 +55,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Features breaching"
         }
       ],
       "options": {
@@ -120,7 +121,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Rolling PR-AUC"
         }
       ],
       "options": {
@@ -177,7 +179,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Hours since last label"
         }
       ],
       "options": {

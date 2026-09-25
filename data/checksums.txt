@@ -1,9 +1,12 @@
-# SHA256 checksums for the raw dataset archive.
+# SHA256 checksums for the raw dataset.
 #
-# Committed so the pipeline is reproducible without committing
-# patient-level data. Verified on every download; a mismatch means the
-# upstream archive changed and every downstream number would silently
-# change with it.
+# Committed so the pipeline is reproducible without committing 1.6 GB
+# of loan records. Verified on every download.
+#
+# This matters more than usual: Lending Club withdrew the official
+# download, so the source is a community mirror. A mirror that changes
+# under us would alter every number downstream in silence. Pinning the
+# bytes makes that failure loud instead.
 #
 # Format: <sha256>  <filename>
-f82ac129da2ddd2299391ff6fbae3a6a58b3edcf59ac9d7bd480c00fe453112a  diabetes-130-us-hospitals.zip
+3eae03c28fd9d2e8a076ebeb73507e8d4d0f44d90500decdb0936e0933d1f36a  lending_club_accepted.csv

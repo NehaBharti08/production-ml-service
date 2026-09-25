@@ -1,6 +1,6 @@
 # Retraining Policy
 
-> **NOT FOR CLINICAL USE.** This document describes an engineering demonstration of ML operations. Nothing here is clinically validated or fit to inform patient care.
+> **NOT A CREDIT DECISIONING SYSTEM.** This document describes an engineering demonstration of ML operations. Nothing here has been validated for lending or reviewed for fair-lending compliance, and none of it may decide anyone's access to credit.
 
 Every number in this document is read from [`configs/thresholds.yaml`](../configs/thresholds.yaml)
 and executed by [`src/mlservice/retraining/`](../src/mlservice/retraining/). Nothing here is
@@ -61,8 +61,8 @@ reported separately rather than collapsed into one "retrain needed" boolean.
 Listed in `NOT_TRIGGERS` in the code and asserted by a test, so removing one is a
 failure rather than a quiet loosening:
 
-- **A single feature breaching in a single window.** With 43 features at a 99th-percentile
-  threshold, ~0.4 features breach per window by chance alone. This is noise.
+- **A single feature breaching in a single window.** With 63 monitored features at a
+  99th-percentile threshold, ~0.63 breach per window by chance alone. This is noise.
 - **Prediction drift without a corresponding data-drift signal.** Scores moving without
   inputs moving usually means the serving path changed, not the world.
 - **A latency or error-rate alert.** Those are serving problems. Retraining does not fix
@@ -112,7 +112,7 @@ go stale. The margin is one-sided — the challenger may be better without limit
 
 > Brier ≤ incumbent × **1.02**  **and**  ECE ≤ **0.05**
 
-**This gate is why the repository exists.** A challenger that ranks patients better but
+**This gate is why the repository exists.** A challenger that ranks borrowers better but
 whose probabilities are systematically wrong is a *regression* for a health-adjacent use
 case, and almost every promotion pipeline in the wild would ship it because AUC went up.
 
@@ -150,12 +150,14 @@ prevents them getting worse.
 > **all** Phase 4 behaviour tests pass — no partial credit
 
 Catches a corrupted feature pipeline that every aggregate metric sails past. A model can
-post an excellent PR-AUC while `number_inpatient` is silently mapped to the wrong
-column; the directional test that asserts *more prior inpatient visits must not decrease
-predicted risk* catches it, and the metric does not.
+post an excellent PR-AUC while `grade` is silently mapped to the wrong column. The
+directional test that asserts *a worse grade must not lower predicted risk* catches it;
+the metric does not. Measured: flattening `grade` costs 0.0195 PR-AUC — invisible on a
+dashboard, and the entire margin over the lender's own pricing. See the ablation table
+in [RUNBOOK.md](RUNBOOK.md) §5.
 
-The pass rate is 1.0 rather than 0.95 because these encode clinical priors. "95% of our
-clinical assumptions hold" is not a thing to be relaxed about.
+The pass rate is 1.0 rather than 0.95 because these encode lending priors. "95% of our
+assumptions about credit risk hold" is not a thing to be relaxed about.
 
 ### 3.5 Operational — can it actually serve?
 
@@ -233,7 +235,7 @@ Two levers, because there are two layers that can be wrong:
 | Layer | Mechanism | When |
 |---|---|---|
 | Model | `mlservice retrain rollback --reason "..."` | The model is bad. Alias flip, no deploy. |
-| Container | `kubectl rollout undo deployment/readmission-api` | The image is bad — dependency, config, serving code. |
+| Container | `kubectl rollout undo deployment/credit-risk-api` | The image is bad — dependency, config, serving code. |
 
 Budget: **120 seconds** to rollback. Not because 120 is magic, but because a rollback
 path that takes longer than that stops being the first thing you reach for during an
@@ -289,13 +291,16 @@ different at demo traffic, where the first promotes after seeing almost nothing.
 
 Stated plainly rather than left for a reader to discover:
 
-- **The canary is designed and configured, not exercised.** Weighted traffic splitting
-  needs the kind cluster, and Docker is not installed on this machine. The manifests are
-  written and the thresholds are set; no canary rollout has actually run.
-- **`kubectl rollout undo` has not been demonstrated.** Same reason. The *registry* half
-  of rollback — the model-level lever — is genuinely verified above.
-- **The scheduled trigger runs on a simulated clock.** The dataset spans 1999–2008 and
-  has no timestamp column (see [ADR 0004](DECISIONS/0004-temporal-split-proxy.md)); the
+- **Canary rollback is manual.** The canary has run on kind — split measured, breach
+  evaluated, rolled back and re-measured; see
+  [K8S_ROLLBACK_DEMO.md](K8S_ROLLBACK_DEMO.md). But `auto_rollback_on_breach: true`
+  is a config value with nothing wired to act on it: the evaluator exits non-zero and a
+  human deletes the canary. A controller closing that loop is not built.
+- **`kubectl rollout undo` is demonstrated on kind only**, single node, with the
+  artifact mounted by `hostPath`. It is the same command a real cluster uses; the
+  surrounding infrastructure is not.
+- **The scheduled trigger runs on a simulated clock.** The dataset has a real date, but
+  it ends in 2015 (see [ADR 0004](DECISIONS/0004-chronological-split.md)); the
   30-day cadence is evaluated against registry creation timestamps.
 - **No retraining has been triggered end-to-end by drift in a live system.** The trigger
   fires correctly against real replay evidence — `retrain check` reports

@@ -55,7 +55,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Model loaded"
         }
       ],
       "options": {
@@ -116,7 +117,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Predictions / sec"
         }
       ],
       "options": {
@@ -155,7 +157,7 @@
       "type": "stat",
       "id": 3,
       "title": "Flagged rate",
-      "description": "Share of patients above the decision threshold. This is what drives downstream workload \u2014 measured at ~32% on the test split.",
+      "description": "Share of applications above the decision threshold. This is what drives downstream workload \u2014 measured at 25.9% on the test split.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -173,7 +175,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Flagged rate"
         }
       ],
       "options": {
@@ -230,7 +233,8 @@
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "legendFormat": "Outcomes recorded"
         }
       ],
       "options": {
@@ -286,7 +290,7 @@
       "type": "timeseries",
       "id": 11,
       "title": "Mean predicted probability",
-      "description": "Moves before accuracy does, and long before labels mature at 30 days. The earliest available signal that the input population changed.",
+      "description": "Moves before accuracy does, and years before a loan's label matures at the end of its term. The earliest available signal that the input population changed.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"

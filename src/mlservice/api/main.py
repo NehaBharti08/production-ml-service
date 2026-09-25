@@ -90,7 +90,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         description=(
             f"**{settings.api.disclaimer}**\n\n"
-            "Predicts 30-day hospital readmission risk. This service exists to "
+            "Predicts the probability a loan charges off or defaults. This service exists to "
             "demonstrate ML *operations* — monitoring, drift detection, "
             "calibration-gated retraining and rollback. See `/v1/model` for what "
             "is currently serving."

@@ -237,7 +237,7 @@ def behavioral_gate(challenger: dict[str, Any]) -> GateResult:
     """Every invariance and directional test must pass — 100%, not most.
 
     This catches a corrupted feature pipeline that aggregate metrics sail past.
-    A transform that silently drops ``number_inpatient`` leaves PR-AUC nearly
+    A transform that silently drops ``grade`` leaves PR-AUC nearly
     intact, because the remaining features carry correlated signal, while making
     the model blind to its single strongest predictor. Only a directional test
     notices.

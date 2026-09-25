@@ -43,7 +43,7 @@ import numpy as np
 import pandas as pd
 
 from mlservice.config import PROJECT_ROOT, get_settings, get_thresholds
-from mlservice.data import schema
+from mlservice.data import clean, schema
 from mlservice.logging_ import get_logger
 
 log = get_logger(__name__)
@@ -66,7 +66,7 @@ def population_stability_index(
 
     Numeric features use **quantile** edges derived from the reference, not
     equal-width ones. Equal-width bins on a skewed feature — and most features
-    here are skewed, e.g. ``number_inpatient`` is zero for most patients — put
+    here are skewed, e.g. ``pub_rec`` is zero for 87.1% of loans — put
     nearly all mass in one bin, so the statistic loses the resolution to detect
     anything.
 
@@ -95,8 +95,8 @@ def population_stability_index(
 def _quantile_edges(series: pd.Series, bins: int) -> np.ndarray:
     """Quantile bin edges, deduplicated.
 
-    A feature where one value dominates (``number_emergency`` is 0 for most
-    patients) produces duplicate quantiles. Deduplicating collapses the bin
+    A feature where one value dominates (``delinq_2yrs`` is 0 for 82.7% of
+    loans) produces duplicate quantiles. Deduplicating collapses the bin
     count rather than creating zero-width bins, which would divide by zero.
     """
     quantiles = np.linspace(0, 1, bins + 1)
@@ -181,7 +181,15 @@ def calibrate(
     floor = floor if floor is not None else config["floor"]
     ceiling = ceiling if ceiling is not None else config["ceiling"]
 
-    ordered = reference.sort_values(schema.ENCOUNTER_ID).reset_index(drop=True)
+    # Ordered by issue date: the empirical null is the PSI between CONSECUTIVE
+    # stable windows, so "consecutive" has to mean consecutive in time. Sorting
+    # by anything else would measure churn between arbitrary groups.
+    #
+    # This line used to read `reference.sort_values(schema.TIME_COLUMN)`, and
+    # that column is a string, so it sorted Apr, Aug, Dec, Feb, Jan... Every
+    # threshold below was the churn between months that are adjacent in the
+    # ALPHABET. The comment above was right; the code under it was not.
+    ordered = clean.order_by_time(reference).reset_index(drop=True)
     window_rows = len(ordered) // n_windows
     if window_rows < 100:
         raise ValueError(

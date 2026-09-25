@@ -8,7 +8,7 @@ times:
     immediate, and it moves before accuracy does.
 *   **Delayed-label drift** — has actual performance degraded? The only one that
     directly answers "is the model still good", and the one that cannot be known
-    for 30 days.
+    until a loan's term ends — 1,096 days for a 36-month loan.
 
 The ordering matters operationally. Data and prediction drift are *leading*
 indicators — cheap, fast, and suggestive. Label drift is the *lagging* ground
@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 
 from mlservice.config import get_settings, get_thresholds
-from mlservice.data import schema
+from mlservice.data import clean, schema
 from mlservice.logging_ import get_logger
 from mlservice.monitoring.null_calibration import population_stability_index
 
@@ -101,6 +101,20 @@ def _feature_thresholds() -> dict[str, float]:
     return thresholds
 
 
+def _not_monitored() -> dict[str, str]:
+    """Features deliberately excluded from drift detection, name -> reason.
+
+    Kept out of the calibrated block on purpose: `monitor calibrate` rewrites
+    `per_feature`, and an exclusion must survive that, because it encodes a
+    reason rather than a measurement.
+    """
+    config = get_thresholds().model_dump()["drift"].get("not_monitored") or {}
+    features: dict[str, Any] = config.get("features") or {}
+    return {
+        name: (body or {}).get("reason", "no reason recorded") for name, body in features.items()
+    }
+
+
 def detect_data_drift(
     reference: pd.DataFrame, current: pd.DataFrame, thresholds: dict[str, float] | None = None
 ) -> list[FeatureDrift]:
@@ -108,14 +122,18 @@ def detect_data_drift(
 
     Each feature is compared against **its own** calibrated threshold, not a
     shared constant. Measured in Phase 6: a uniform 0.10 would have flagged
-    ``medical_specialty`` in 11 of 19 windows already accepted as stable,
-    because its median churn (0.1196) is above the conventional bar.
+    ``int_rate`` in 4 of the 19 window pairs already accepted as stable, and
+    ``verification_status`` in 3 — while those features' *median* churn is
+    0.0331 and 0.0170, far under the conventional bar. They are flat with
+    occasional step changes, so one constant either pages on the steps or
+    sleeps through everything else.
     """
     thresholds = thresholds if thresholds is not None else _feature_thresholds()
+    excluded = _not_monitored()
     features = [
         c
         for c in (*schema.NUMERIC_FEATURES, *schema.CATEGORICAL_FEATURES)
-        if c in reference.columns and c in current.columns
+        if c in reference.columns and c in current.columns and c not in excluded
     ]
 
     results: list[FeatureDrift] = []
@@ -268,6 +286,17 @@ def detect_label_drift(
     }
 
 
+def _window_bounds(current: pd.DataFrame) -> tuple[str, str]:
+    """Earliest and latest month in the window, by date rather than by spelling."""
+    if schema.TIME_COLUMN not in current.columns:
+        return "", ""
+    dates = clean.parse_issue_date(current)
+    if dates.isna().all():
+        return "", ""
+    raw = current[schema.TIME_COLUMN]
+    return str(raw.loc[dates.idxmin()]), str(raw.loc[dates.idxmax()])
+
+
 def analyse_window(
     reference: pd.DataFrame,
     current: pd.DataFrame,
@@ -285,9 +314,21 @@ def analyse_window(
     # compares distributions that are not comparable, and the report would
     # silently lie rather than refuse.
     ref_hash = str(reference.attrs.get("feature_schema_hash", "unknown"))
-    cur_hash = str(current.attrs.get("feature_schema_hash", ref_hash))
+
+    # An unstamped window defaulted to the REFERENCE's hash, so `comparable`
+    # came back true no matter what the window contained. Every caller that
+    # forgot to stamp the frame got a guarantee it had not earned — including
+    # `monitor check`, which was comparing readmission records against a credit
+    # reference and reporting the result as drift.
+    cur_hash = str(current.attrs.get("feature_schema_hash", "unstamped"))
     comparable = ref_hash == cur_hash
-    if not comparable:
+    if cur_hash == "unstamped":
+        notes.append(
+            "UNVERIFIABLE: the current window carries no feature_schema_hash, so "
+            "it cannot be shown comparable to the reference. Numbers below are "
+            "indicative only."
+        )
+    elif not comparable:
         notes.append(
             f"SCHEMA MISMATCH: reference {ref_hash} vs current {cur_hash}. "
             "Drift numbers below are not comparable and must not be acted on."
@@ -299,13 +340,22 @@ def analyse_window(
             "minimum — PSI is unstable at this size and results are indicative only"
         )
 
+    # An excluded feature is announced in every report that omits it. A
+    # monitored set that quietly shrinks is how a blind spot becomes permanent.
+    for name, reason in sorted(_not_monitored().items()):
+        notes.append(f"NOT MONITORED: {name} — {' '.join(reason.split())}")
+
+    start, end = _window_bounds(current)
+
     report = DriftReport(
-        window_start=str(current[schema.ENCOUNTER_ID].min())
-        if schema.ENCOUNTER_ID in current.columns
-        else "",
-        window_end=str(current[schema.ENCOUNTER_ID].max())
-        if schema.ENCOUNTER_ID in current.columns
-        else "",
+        # Real dates now, not an ID proxy — so a drift report says WHEN the
+        # window was rather than merely where it sat in an ordering.
+        #
+        # Taken from the PARSED date. `issue_d` is a string, so .min()/.max()
+        # on it returned the alphabetically first and last month — "Apr-2015"
+        # for a window that began in July.
+        window_start=start,
+        window_end=end,
         window_rows=len(current),
         reference_rows=len(reference),
         feature_schema_hash=cur_hash,
@@ -328,6 +378,15 @@ def analyse_window(
     if matured is not None and baseline_pr_auc is not None:
         report.labels = detect_label_drift(matured, baseline_pr_auc)
 
+    # Recorded whatever detect_label_drift concluded, including when it refused
+    # for want of labels. The watchdog asks "when did a label last arrive",
+    # which is exactly the question that matters most when the answer is
+    # "not recently" — so it cannot live on the sufficient-labels branch.
+    if matured is not None and "outcome_timestamp" in getattr(matured, "columns", []):
+        stamps = pd.to_datetime(matured["outcome_timestamp"], errors="coerce", utc=True).dropna()
+        if len(stamps):
+            report.labels["last_matured_timestamp"] = stamps.max().timestamp()
+
     log.info(
         "drift_window_analysed",
         window_rows=len(current),
@@ -345,8 +404,8 @@ def alert_state_from_counts(breaching_counts: list[int]) -> dict[str, Any]:
     """Decide whether consecutive windows constitute a confirmed alert.
 
     **Two-window confirmation is the whole point.** A single window breaching is
-    noise: with ~43 features at a 99th-percentile threshold, roughly 0.4 features
-    breach per window by chance alone. Requiring the same condition in
+    noise: with 63 monitored features at a 99th-percentile threshold, roughly
+    0.63 breach per window by chance alone. Requiring the same condition in
     consecutive windows is what stops the pager firing on sampling variation —
     and a pager that fires on noise is one people learn to ignore.
 
@@ -411,7 +470,7 @@ def load_reports(limit: int | None = None) -> list[dict[str, Any]]:
             if not report:
                 continue
             # Carried through so a caller can tell induced demo drift from the
-            # real 1999->2008 shift. Losing that distinction here is how an
+            # real 2014->2015 shift. Losing that distinction here is how an
             # honest report turns into a misleading one two layers up.
             report.setdefault("drift_origin", window.get("drift_origin"))
             report["source"] = path.name

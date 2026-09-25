@@ -53,7 +53,7 @@ def _flatten_validation_errors(exc: RequestValidationError) -> list[dict[str, An
     """Turn pydantic's nested errors into flat, actionable entries."""
     flat: list[dict[str, Any]] = []
     for error in exc.errors():
-        # loc is like ("body", "features", "time_in_hospital"); the leading
+        # loc is like ("body", "features", "fico_range_low"); the leading
         # "body" is noise to the caller, who knows what they sent.
         location = [str(part) for part in error.get("loc", []) if part != "body"]
         entry: dict[str, Any] = {
@@ -69,6 +69,21 @@ def _flatten_validation_errors(exc: RequestValidationError) -> list[dict[str, An
             entry["constraint"] = {k: str(v)[:80] for k, v in ctx.items()}
         flat.append(entry)
     return flat
+
+
+def _metric_field(field: str) -> str:
+    """``items.7.loan_amnt`` -> ``items.[].loan_amnt``, for the metric label only.
+
+    The response keeps the exact index, because a caller fixing a batch needs
+    to know *which* item was wrong. A Prometheus label must not: the index runs
+    to the batch size, so one malformed batch of 20 creates 20 new series per
+    field, and the series count grows without bound as batches get larger.
+
+    Seeding one dashboard produced 281 series on this counter from a single
+    script run. The panel exists to show that one field is being sent wrong,
+    and that signal is *stronger* once the indices collapse into it.
+    """
+    return ".".join("[]" if part.isdigit() else part for part in field.split("."))
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -90,7 +105,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             from mlservice.api import metrics
 
             for entry in errors:
-                metrics.record_validation_error(entry["field"])
+                metrics.record_validation_error(_metric_field(entry["field"]))
         except Exception:  # metrics must never mask the real error
             pass
 

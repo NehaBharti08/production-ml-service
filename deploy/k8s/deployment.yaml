@@ -1,4 +1,4 @@
-# Deployment for the readmission API.
+# Deployment for the credit-risk API.
 #
 # The probes are the reason this manifest exists. `/health/live` and
 # `/health/ready` are separate endpoints answering separate questions, and
@@ -20,9 +20,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: readmission-api
+  name: credit-risk-api
   labels:
-    app: readmission-api
+    app: credit-risk-api
 spec:
   replicas: 2
   revisionHistoryLimit: 5 # keeps `kubectl rollout undo` meaningful
@@ -36,7 +36,7 @@ spec:
     # Note: a Deployment's selector is immutable. Adding this to an existing
     # deployment requires `kubectl delete deployment` first.
     matchLabels:
-      app: readmission-api
+      app: credit-risk-api
       track: stable
   strategy:
     type: RollingUpdate
@@ -49,7 +49,7 @@ spec:
   template:
     metadata:
       labels:
-        app: readmission-api      # the Service selects on this
+        app: credit-risk-api      # the Service selects on this
         track: stable             # ...this keeps the two Deployments disjoint
       annotations:
         prometheus.io/scrape: "true"
@@ -72,7 +72,7 @@ spec:
               containerPort: 8000
           envFrom:
             - configMapRef:
-                name: readmission-api-config
+                name: credit-risk-api-config
 
           # Startup probe first, so a slow model load does not get mistaken for
           # a wedged process. Without it, liveness starts counting immediately

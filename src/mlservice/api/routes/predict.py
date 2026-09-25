@@ -58,7 +58,7 @@ def _model_info(model: object) -> ModelInfo:
 @router.post(
     "/predict",
     response_model=PredictionResponse,
-    summary="Score one encounter",
+    summary="Score one loan application",
     responses={
         422: {"description": "Validation failed; the response names each field."},
         503: {"description": "No model loaded."},
@@ -101,7 +101,7 @@ async def predict(
 
     # Note what is NOT logged here: no feature values. They are in the
     # prediction log, which is access-controlled as a data store; an aggregated
-    # application log is not the place for a patient record.
+    # application log is not the place for a borrower record.
     log.info(
         "prediction_served",
         prediction_id=record.prediction_id,
@@ -114,7 +114,7 @@ async def predict(
     return PredictionResponse(
         prediction_id=record.prediction_id,
         request_id=record.request_id,
-        readmission_probability=round(probability, 6),
+        default_probability=round(probability, 6),
         flagged=bool(label),
         decision_threshold=model.decision_threshold,
         model=_model_info(model),
@@ -126,7 +126,7 @@ async def predict(
 @router.post(
     "/predict/batch",
     response_model=BatchPredictionResponse,
-    summary="Score many encounters in one call",
+    summary="Score many loan applications in one call",
     responses={
         413: {"description": "Batch exceeds the configured maximum."},
         422: {"description": "Validation failed; the response names each field."},
@@ -198,7 +198,7 @@ async def predict_batch(
             PredictionResponse(
                 prediction_id=record.prediction_id,
                 request_id=record.request_id,
-                readmission_probability=round(probability, 6),
+                default_probability=round(probability, 6),
                 flagged=bool(label),
                 decision_threshold=model.decision_threshold,
                 model=_model_info(model),
