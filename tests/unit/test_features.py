@@ -8,6 +8,8 @@ changes no score by any amount.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pytest
 from sklearn.preprocessing import QuantileTransformer
@@ -108,3 +110,46 @@ class TestItIsActuallyFaster:
             return min(timings)
 
         assert best(slow) > 2 * best(fast)
+
+
+class TestRegistrySerialisation:
+    """The champion must survive MLflow's skops save, not just joblib.
+
+    Adding FastNormalQuantileTransformer made the first CI registration fail
+    with "untrusted types": skops refuses classes it has not been told to
+    trust. A local retrain with ``--no-register`` never reaches that save, so
+    nothing caught it before CI did. This test performs the same save.
+    """
+
+    def test_pipeline_with_the_transformer_saves_and_reloads(
+        self, credit_like: np.ndarray, tmp_path: Any
+    ) -> None:
+        import mlflow.sklearn
+        from sklearn.calibration import CalibratedClassifierCV
+        from sklearn.frozen import FrozenEstimator
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.pipeline import Pipeline
+
+        from mlservice.models.train import SKOPS_TRUSTED_TYPES
+
+        x = np.nan_to_num(credit_like[:4000])
+        y = (x[:, 0] > np.median(x[:, 0])).astype(int)
+        base = Pipeline(
+            [
+                (
+                    "scale",
+                    FastNormalQuantileTransformer(n_quantiles=100, output_distribution="normal"),
+                ),
+                ("model", LogisticRegression()),
+            ]
+        ).fit(x[:3000], y[:3000])
+        # The same shape as the champion: a prefit pipeline behind isotonic
+        # calibration, which is where _CalibratedClassifier comes from.
+        model = CalibratedClassifierCV(FrozenEstimator(base), method="isotonic").fit(
+            x[3000:], y[3000:]
+        )
+
+        path = tmp_path / "model"
+        mlflow.sklearn.save_model(model, str(path), skops_trusted_types=list(SKOPS_TRUSTED_TYPES))
+        reloaded = mlflow.sklearn.load_model(str(path))
+        np.testing.assert_array_equal(reloaded.predict_proba(x[:50]), model.predict_proba(x[:50]))
