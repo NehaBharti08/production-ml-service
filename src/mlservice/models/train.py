@@ -33,6 +33,24 @@ from mlservice.models import calibration, evaluate, registry, subgroups
 
 log = get_logger(__name__)
 
+#: Types skops must be told to trust when MLflow saves the champion.
+#:
+#: *   ``_CalibratedClassifier`` — sklearn's internal calibrator class.
+#: *   ``FastNormalQuantileTransformer`` — this project's own transformer, see
+#:     mlservice.data.features. skops knows sklearn's classes but not ours.
+#: *   ``numpy.dtype`` — skops serialises an unfamiliar subclass generically,
+#:     which stores dtype objects its sklearn-specific handlers never emit.
+#:
+#: The second and third arrived together with the subclass, and the first run
+#: to register a model after it failed in CI with "untrusted types". A local
+#: retrain passed because ``--no-register`` never reaches log_model — so
+#: tests/unit/test_features.py now performs this exact save.
+SKOPS_TRUSTED_TYPES: tuple[str, ...] = (
+    "sklearn.calibration._CalibratedClassifier",
+    "mlservice.data.features.FastNormalQuantileTransformer",
+    "numpy.dtype",
+)
+
 
 @dataclass
 class Candidate:
@@ -339,11 +357,11 @@ def run_training(register_model: bool = True) -> dict[str, Any]:
                 name="model",
                 input_example=x_test.head(3),
                 # MLflow 3.x serialises with skops, which refuses to load types
-                # not on an allow-list. The calibrator's internal class is one
-                # of them. Naming it explicitly is preferable to switching the
-                # whole artifact to cloudpickle: this keeps the safe loader and
-                # states exactly which type is being trusted and why.
-                skops_trusted_types=["sklearn.calibration._CalibratedClassifier"],
+                # not on an allow-list. Naming them explicitly is preferable to
+                # switching the whole artifact to cloudpickle: this keeps the
+                # safe loader and states exactly which types are trusted. The
+                # list lives in SKOPS_TRUSTED_TYPES, where it is explained.
+                skops_trusted_types=list(SKOPS_TRUSTED_TYPES),
             )
             mlflow.log_params(
                 {
