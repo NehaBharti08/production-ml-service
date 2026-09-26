@@ -136,7 +136,7 @@ def induce_grade_shift(
     Club's grade mix moved repeatedly across 2007-2015 as they chased volume.
 
     Chosen because `grade` carries the largest coefficient in the champion
-    (grade_A at -0.78), so shifting it moves the input distribution **and** the
+    (grade_A at -0.76), so shifting it moves the input distribution **and** the
     score distribution together. That exercises data drift and prediction
     drift in one manipulation, which a synthetic column could not.
 

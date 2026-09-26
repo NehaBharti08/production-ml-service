@@ -12,7 +12,7 @@
 # 3.5-4 GB precisely because compose and a cluster cannot both run here.
 #
 # The canary serves a DIFFERENT OPERATING POINT (threshold 0.15 against the
-# champion's 0.2070). That is what makes the split measurable: every response
+# champion's 0.2049). That is what makes the split measurable: every response
 # carries `decision_threshold`, so counting responses attributes traffic to a
 # version without needing pod names, headers, or a mesh's telemetry. It is also
 # what a canary genuinely is — a different model version taking real traffic.

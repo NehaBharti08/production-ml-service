@@ -237,3 +237,43 @@ class TestSeparability:
             f"an unconstrained tree reached {result['test_roc_auc']} test ROC-AUC — "
             "something is leaking"
         )
+
+
+class TestTheChampionIsReproducible:
+    """The champion's fit must not depend on row order, and so not on platform.
+
+    The same commit trained on the same data gave a threshold of 0.20701 on
+    Windows and 0.20561 in CI, disagreeing on 396 of 162,236 flag decisions.
+    Shuffling the rows alone reproduced it: lbfgs stopped wherever its path met
+    the design's near-flat directions, coefficients 9.2e-3 apart.
+
+    This runs on the REAL training matrix deliberately. On synthetic data lbfgs
+    converges cleanly and would pass, so a synthetic version of this test could
+    not fail — the instability belongs to this design. Measured here, lbfgs
+    misses the 1e-6 bar by nearly four orders of magnitude; newton-cholesky
+    clears it with room to spare (3.0e-9).
+    """
+
+    def test_row_order_does_not_move_the_coefficients(
+        self, split_result: split.SplitResult
+    ) -> None:
+        from sklearn.base import clone
+
+        from mlservice.data import features
+        from mlservice.models.train import candidates
+
+        champion = next(c for c in candidates(seed=42) if c.name == "logistic_l2")
+        x, y = features.split_xy(split_result.train)
+        design = features.build_preprocessor(x).fit_transform(x)
+        y_arr = np.asarray(y)
+        order = np.random.default_rng(1).permutation(len(y_arr))
+
+        a = clone(champion.estimator).fit(design, y_arr)
+        b = clone(champion.estimator).fit(design[order], y_arr[order])
+
+        drift = float(np.max(np.abs(a.coef_ - b.coef_)))
+        assert drift < 1e-6, (
+            f"coefficients moved by {drift:.2e} when only the row order changed — "
+            "the solver is stopping short of the optimum, so the champion will "
+            "differ between machines"
+        )

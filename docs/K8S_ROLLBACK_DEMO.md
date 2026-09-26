@@ -12,6 +12,8 @@ Captured output from a real run, not a description of what would happen.
   schema `f5566c96d5eed4de`
 - **Script:** [`scripts/k8s_rollback_demo.sh`](../scripts/k8s_rollback_demo.sh)
 
+> **Captured on the lbfgs champion.** On 2026-09-25 the solver changed to newton-cholesky, because lbfgs stopped at a point that depended on row order and platform; the current threshold is 0.2049. The output below is left exactly as it ran. Nothing it demonstrates depends on the value: probes, endpoints and rollback behave the same, and the canary still serves a lower operating point (0.15) than the champion.
+
 The headline result:
 
 > **12/12 health probes returned 200 during the failed rollout**, and the

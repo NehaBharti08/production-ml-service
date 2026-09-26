@@ -175,9 +175,9 @@ this model beats the incumbent lender's judgment:
 |:--|--:|:--|
 | Prevalence floor | 0.1471 | — |
 | `int_rate` — the lender's own priced risk | 0.2529 | [0.2486, 0.2575] |
-| **Champion** | **0.2723** | **[0.2676, 0.2769]** |
+| **Champion** | **0.2725** | **[0.2678, 0.2771]** |
 
-Non-overlapping intervals, so the win is real. It is also **0.019** — and part
+Non-overlapping intervals, so the win is real. It is also **0.020** — and part
 of the champion's skill is the lender's, because their grade carries the two
 largest coefficients in the model. See
 [ADR 0009](docs/DECISIONS/0009-lender-grade-as-a-feature.md).
@@ -388,7 +388,7 @@ earlier report's attribution of this cost to the wrong step.
 **Complete.** All eight phases, with every claim in the verification table
 below executed and observed rather than assumed.
 
-**315 tests** — 221 unit, 29 contract, 25 behaviour, 21 data-quality, 19
+**317 tests** — 222 unit, 29 contract, 25 behaviour, 22 data-quality, 19
 integration — plus a rollback cycle against a real registry. Lint, format,
 types and a Trivy container scan gate every pull request.
 
@@ -488,7 +488,7 @@ undisclosed is worse than reading them here.
   the standard defence and it is simply unavailable; held-out metrics are
   inflated to whatever extent repeat borrowing occurs.
 - **The model inherits the lender's judgment.** Lending Club's own grade carries
-  the two largest coefficients. The model beats their pricing by 0.019 PR-AUC —
+  the two largest coefficients. The model beats their pricing by 0.020 PR-AUC —
   real, narrow, and partly theirs.
 - **No fair-lending review has been done.** Geography is a top-ten signal and the
   worst subgroup gap falls on a state. That work would be mandatory before any

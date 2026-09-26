@@ -145,7 +145,7 @@ its reason and revisit condition recorded in config. See
 already present, a "clean" window can alert too — window 0 puts `grade` at
 0.1021 against a 0.10 threshold. The induced effect is therefore shown on the
 manipulated feature specifically: over-sampling the D-G shoulder takes `grade`
-to 0.2746, 0.3137 and 0.3032, and the alert rate from 0.3334 to 0.4388–0.4620.
+to 0.2746, 0.3137 and 0.3032, and the alert rate from 0.3346 to 0.4386–0.4618.
 Reporting "the detector fired after we induced drift" without that isolation
 would be misleading, since it fires beforehand as well.
 

@@ -23,6 +23,50 @@ from mlservice.models.evaluate import TARGET_RECALL
 log = get_logger(__name__)
 
 
+_NUMBER_WORDS = (
+    "None",
+    "One",
+    "Two",
+    "Three",
+    "Four",
+    "Five",
+    "Six",
+    "Seven",
+    "Eight",
+    "Nine",
+    "Ten",
+)
+
+
+def _top_coefficients(summary: dict[str, Any], k: int = 10) -> list[tuple[str, float]]:
+    """The champion's largest coefficients, read from the artifact itself.
+
+    These were typed into this file as "-0.78" and "-0.57", and went stale the
+    first time the champion was retrained. Computed here instead, from the
+    artifact the summary names, so the card cannot quote a model it is not
+    describing.
+
+    The paragraph around them is still prose, so it is guarded: if the largest
+    two coefficients are no longer grade columns, rendering stops rather than
+    printing a paragraph that has quietly become false.
+    """
+    import joblib
+
+    model = joblib.load(summary["local_fallback"])
+    base = model.calibrated_classifiers_[0].estimator.estimator
+    names = base.named_steps["preprocess"].get_feature_names_out()
+    coef = base.named_steps["model"].coef_.ravel()
+    order = sorted(range(len(coef)), key=lambda i: -abs(coef[i]))[:k]
+    top = [(str(names[i]), float(coef[i])) for i in order]
+    if not all(name.startswith(("grade_", "sub_grade_")) for name, _ in top[:2]):
+        raise RuntimeError(
+            f"the largest coefficients are now {top[:2]}, not grade columns; "
+            "the model card's 'grade and sub_grade dominate' paragraph needs "
+            "rewriting before it can be rendered"
+        )
+    return top
+
+
 def _pct(x: float) -> str:
     return f"{x * 100:.1f}%"
 
@@ -369,16 +413,20 @@ def render(summary: dict[str, Any], audit: dict[str, Any]) -> str:
             f"{(high['recall'] - low['recall']) * 100:.1f} percentage points across "
             f"subgroups large enough to analyse. {gloss}\n"
         )
+    top = _top_coefficients(summary)
+    first, second = top[0], top[1]
+    n_state = sum(name.startswith("addr_state_") for name, _ in top)
     add(
         "**The mechanism is visible in the coefficients, and it is "
         "uncomfortable.** Two facts about what drives this model:\n\n"
-        "1. **`grade` and `sub_grade` dominate.** `grade_A` carries the largest "
-        "single weight (-0.78), with `sub_grade_A1` next (-0.57). Those columns "
+        f"1. **`grade` and `sub_grade` dominate.** `{first[0]}` carries the largest "
+        f"single weight ({first[1]:+.2f}), with `{second[0]}` next "
+        f"({second[1]:+.2f}). Those columns "
         "are *Lending Club's own risk assessment*, so this model substantially "
         "inherits their underwriting judgment — including any bias in it. A "
         "model that reproduces an existing lender's decisions will reproduce "
         "that lender's disparities, and will look accurate while doing so.\n"
-        "2. **Geography is a top-ten signal.** Four of the ten largest "
+        f"2. **Geography is a top-ten signal.** {_NUMBER_WORDS[n_state]} of the ten largest "
         "coefficients are `addr_state` dummies. The worst subgroup gap falling "
         "on a state is therefore not incidental — state is structurally one of "
         "the strongest things the model uses.\n\n"
@@ -408,7 +456,8 @@ def render(summary: dict[str, Any], audit: dict[str, Any]) -> str:
         "repeat borrowing occurs.\n"
         "- **The model inherits the lender's judgment.** `grade` and "
         "`sub_grade` are Lending Club's own risk output and carry the largest "
-        "coefficients. Beating their pricing by 0.019 PR-AUC is a real but "
+        "coefficients. Beating their pricing by "
+        f"{champ['pr_auc']['point'] - heuristic['pr_auc']:.3f} PR-AUC is a real but "
         "narrow margin, and part of the model's apparent skill is theirs.\n"
         f"- **Positive rate varies modestly across the split** "
         f"({audit['split']['positive_rate']['train'] * 100:.2f}% train → "
