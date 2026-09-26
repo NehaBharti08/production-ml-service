@@ -8,13 +8,13 @@ Metric choices are not neutral here, so each is justified:
     actually default. PR-AUC responds to precision and recall on the minority
     class, which is the question being asked.
 *   **Bootstrap confidence intervals on everything.** Without them, "PR-AUC
-    improved from 0.2529 to 0.2723" is uninterpretable, and that particular
+    improved from 0.2529 to 0.2725" is uninterpretable, and that particular
     comparison decides whether this model beats the lender's own pricing. On
-    162,236 test rows with 23,863 positives the interval is [0.2676, 0.2769]
+    162,236 test rows with 23,863 positives the interval is [0.2678, 0.2771]
     against the baseline's [0.2486, 0.2575] — non-overlapping, so the win is
     real. Later phases compare challengers on exactly this number.
 *   **The operating threshold is chosen for a stated recall target**, on
-    validation, never 0.5. The trained threshold is 0.2070; a 0.5 threshold on
+    validation, never 0.5. The trained threshold is 0.2049; a 0.5 threshold on
     a 14.8%-prevalence problem flags almost nobody, which is why the
     majority-class baseline gets 0% recall — and why a 0.5 placeholder reaching
     production is a silent failure rather than a loud one.

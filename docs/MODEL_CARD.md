@@ -18,7 +18,7 @@
 | Version | unregistered |
 | Type | logistic_l2 — regularised logistic regression |
 | Calibration | isotonic, fitted on validation |
-| Decision threshold | 0.2070 |
+| Decision threshold | 0.2049 |
 | Feature schema hash | `f5566c96d5eed4de` |
 | Training rows | 389,353 |
 | Licence | MIT (code); dataset per its own terms |
@@ -55,10 +55,10 @@ PR-AUC is the headline. At a 14.71% positive rate ROC-AUC is dominated by the la
 
 | Metric | Value | 95% CI |
 |:--|--:|:--|
-| **PR-AUC** | **0.2723** | [0.2676, 0.2769] |
-| ROC-AUC | 0.7022 | [0.6988, 0.7054] |
+| **PR-AUC** | **0.2725** | [0.2678, 0.2771] |
+| ROC-AUC | 0.7022 | [0.6989, 0.7054] |
 | Brier | 0.1172 | [0.1162, 0.1184] |
-| ECE (10 bins) | 0.0039 | — |
+| ECE (10 bins) | 0.0036 | — |
 | MCE (worst bin) | 0.0250 | — |
 
 ### Against the baselines it must beat
@@ -67,27 +67,27 @@ PR-AUC is the headline. At a 14.71% positive rate ROC-AUC is dominated by the la
 |:--|--:|:--|
 | Prevalence floor | 0.1471 | — |
 | `int_rate` heuristic — the lender's own priced risk | 0.2529 | [0.2486, 0.2575] |
-| **This model** | **0.2723** | [0.2676, 0.2769] |
+| **This model** | **0.2725** | [0.2678, 0.2771] |
 
 The intervals **do not overlap**, so the model has demonstrably beaten the lender's own priced risk, available at origination with no model of ours at all. That was the bar for justifying the serving, monitoring and retraining infrastructure.
 For contrast, the majority-class baseline scores **85.3% accuracy with 0% recall.** This is why accuracy is not reported as a headline metric.
 
 ## Operating point, stated honestly
 
-The threshold (0.2070) was chosen **on validation** to reach 50.0% recall. On the held-out test split:
+The threshold (0.2049) was chosen **on validation** to reach 50.0% recall. On the held-out test split:
 
 | | |
 |:--|--:|
-| Recall | 0.478 |
+| Recall | 0.480 |
 | Precision | 0.272 |
 | Loans flagged | 25.9% |
 | Lift over prevalence | 1.849× |
-| True positives | 11,414 |
-| False positives | 30,562 |
-| False negatives | 12,449 |
+| True positives | 11,447 |
+| False positives | 30,635 |
+| False negatives | 12,416 |
 
-**Read those numbers plainly.** To catch 48% of defaults the model flags 25.9% of all loans, and 72.8% of those flags are wrong. It produces 30,562 false alarms for 11,414 true ones. That is the real trade-off at this prevalence, and no threshold choice escapes it — it is a property of the problem, not a defect of the model.
-Recall on test (0.478) also fell short of the validation target (0.512). A threshold tuned on one time period does not transfer perfectly to the next — which is precisely the behaviour the monitoring in Phase 6 exists to detect.
+**Read those numbers plainly.** To catch 48% of defaults the model flags 25.9% of all loans, and 72.8% of those flags are wrong. It produces 30,635 false alarms for 11,447 true ones. That is the real trade-off at this prevalence, and no threshold choice escapes it — it is a property of the problem, not a defect of the model.
+Recall on test (0.480) also fell short of the validation target (0.512). A threshold tuned on one time period does not transfer perfectly to the next — which is precisely the behaviour the monitoring in Phase 6 exists to detect.
 
 ## Calibration
 
@@ -95,7 +95,7 @@ Calibration is a **deployment gate** in this project, not a report ([ADR 0002](D
 
 | | Value | Gate | Status |
 |:--|--:|--:|:--|
-| ECE (10 bins) | 0.0039 | ≤ 0.05 | PASS |
+| ECE (10 bins) | 0.0036 | ≤ 0.05 | PASS |
 | Brier | 0.1172 | — | — |
 | MCE (worst bin) | 0.0250 | — | reported, not gated |
 
@@ -113,47 +113,49 @@ The same threshold is applied to every group. Per-group thresholds would improve
 
 | Group | n | Positives | Recall | Precision | Gap vs overall | Analysed |
 |:--|--:|--:|--:|--:|--:|:--:|
-| CA | 23,477 | 3,514 | 0.480 | 0.282 | +0.002 | yes |
-| NY | 13,660 | 2,138 | 0.508 | 0.267 | +0.030 | yes |
-| TX | 13,640 | 2,049 | 0.415 | 0.286 | -0.063 | yes |
-| FL | 11,870 | 1,903 | 0.572 | 0.262 | +0.093 | yes |
-| IL | 6,654 | 874 | 0.373 | 0.261 | -0.105 | yes |
-| NJ | 5,826 | 940 | 0.477 | 0.281 | -0.002 | yes |
-| GA | 5,408 | 669 | 0.438 | 0.257 | -0.040 | yes |
-| PA | 5,307 | 799 | 0.447 | 0.268 | -0.032 | yes |
-| OH | 5,274 | 789 | 0.520 | 0.292 | +0.041 | yes |
-| MI | 4,404 | 634 | 0.506 | 0.255 | +0.028 | yes |
-| CO | 3,393 | 385 | 0.361 | 0.284 | -0.117 | yes |
-| TN | 2,570 | 422 | 0.628 | 0.278 | +0.150 | yes |
-| CT | 2,484 | 281 | 0.367 | 0.222 | -0.112 | yes |
-| NV | 2,390 | 415 | 0.590 | 0.246 | +0.112 | yes |
-| AL | 1,946 | 337 | 0.585 | 0.292 | +0.106 | yes |
-| KS | 1,354 | 172 | 0.326 | 0.252 | -0.153 | yes |
-| MS | 1,005 | 193 | 0.725 | 0.285 | +0.247 | yes |
-| NH | 775 | 70 | 0.186 | 0.203 | -0.293 | yes |
-| WV | 600 | 64 | 0.219 | 0.275 | -0.260 | yes |
-| MT | 438 | 62 | 0.242 | 0.288 | -0.236 | **no — n too small** |
-| DC | 405 | 48 | 0.146 | 0.292 | -0.332 | **no — n too small** |
-| ME | 334 | 35 | 0.600 | 0.221 | +0.122 | **no — n too small** |
-| VT | 320 | 31 | 0.161 | 0.135 | -0.317 | **no — n too small** |
-| WY | 320 | 40 | 0.200 | 0.615 | -0.278 | **no — n too small** |
+| CA | 23,477 | 3,514 | 0.479 | 0.282 | -0.000 | yes |
+| NY | 13,660 | 2,138 | 0.509 | 0.268 | +0.029 | yes |
+| TX | 13,640 | 2,049 | 0.414 | 0.286 | -0.066 | yes |
+| FL | 11,870 | 1,903 | 0.569 | 0.262 | +0.089 | yes |
+| IL | 6,654 | 874 | 0.374 | 0.261 | -0.106 | yes |
+| NJ | 5,826 | 940 | 0.477 | 0.282 | -0.003 | yes |
+| GA | 5,408 | 669 | 0.439 | 0.257 | -0.040 | yes |
+| PA | 5,307 | 799 | 0.446 | 0.267 | -0.034 | yes |
+| OH | 5,274 | 789 | 0.520 | 0.292 | +0.040 | yes |
+| MI | 4,404 | 634 | 0.508 | 0.255 | +0.028 | yes |
+| CO | 3,393 | 385 | 0.361 | 0.284 | -0.119 | yes |
+| TN | 2,570 | 422 | 0.626 | 0.278 | +0.146 | yes |
+| CT | 2,484 | 281 | 0.370 | 0.223 | -0.110 | yes |
+| NV | 2,390 | 415 | 0.590 | 0.247 | +0.111 | yes |
+| AL | 1,946 | 337 | 0.585 | 0.293 | +0.105 | yes |
+| KS | 1,354 | 172 | 0.302 | 0.249 | -0.177 | yes |
+| MS | 1,005 | 193 | 0.720 | 0.288 | +0.241 | yes |
+| NH | 775 | 70 | 0.186 | 0.200 | -0.294 | yes |
+| NE | 754 | 145 | 0.731 | 0.320 | +0.251 | yes |
+| WV | 600 | 64 | 0.234 | 0.283 | -0.245 | yes |
+| MT | 438 | 62 | 0.242 | 0.288 | -0.238 | **no — n too small** |
+| DC | 405 | 48 | 0.167 | 0.320 | -0.313 | **no — n too small** |
+| ME | 334 | 35 | 0.657 | 0.180 | +0.177 | **no — n too small** |
+| VT | 320 | 31 | 0.161 | 0.147 | -0.318 | **no — n too small** |
+| WY | 320 | 40 | 0.200 | 0.615 | -0.280 | **no — n too small** |
+| ND | 311 | 49 | 0.694 | 0.254 | +0.214 | **no — n too small** |
 
-*25 further `addr_state` groups omitted from this table: each is outside the ten largest and none has a recall gap beyond ±0.10. All of them are in `reports/training_summary.json`.*
+*23 further `addr_state` groups omitted from this table: each is outside the ten largest and none has a recall gap beyond ±0.10. All of them are in `reports/training_summary.json`.*
 
 ### `emp_length`
 
 | Group | n | Positives | Recall | Precision | Gap vs overall | Analysed |
 |:--|--:|--:|--:|--:|--:|:--:|
-| 10+ years | 51,831 | 6,811 | 0.397 | 0.269 | -0.082 | yes |
-| 2 years | 14,604 | 2,110 | 0.482 | 0.264 | +0.004 | yes |
-| < 1 year | 13,844 | 2,088 | 0.504 | 0.258 | +0.026 | yes |
-| 3 years | 13,045 | 1,932 | 0.487 | 0.273 | +0.008 | yes |
-| None | 11,439 | 2,461 | 0.706 | 0.295 | +0.227 | yes |
-| 1 year | 11,093 | 1,734 | 0.464 | 0.271 | -0.015 | yes |
-| 5 years | 9,767 | 1,440 | 0.464 | 0.282 | -0.014 | yes |
-| 4 years | 9,490 | 1,412 | 0.461 | 0.275 | -0.017 | yes |
-| 8 years | 8,107 | 1,177 | 0.483 | 0.265 | +0.005 | yes |
-| 7 years | 6,464 | 902 | 0.475 | 0.268 | -0.004 | yes |
+| 10+ years | 51,831 | 6,811 | 0.398 | 0.270 | -0.082 | yes |
+| 2 years | 14,604 | 2,110 | 0.486 | 0.265 | +0.007 | yes |
+| < 1 year | 13,844 | 2,088 | 0.505 | 0.258 | +0.025 | yes |
+| 3 years | 13,045 | 1,932 | 0.486 | 0.272 | +0.006 | yes |
+| None | 11,439 | 2,461 | 0.706 | 0.295 | +0.226 | yes |
+| 1 year | 11,093 | 1,734 | 0.466 | 0.272 | -0.014 | yes |
+| 5 years | 9,767 | 1,440 | 0.464 | 0.282 | -0.016 | yes |
+| 4 years | 9,490 | 1,412 | 0.464 | 0.276 | -0.016 | yes |
+| 8 years | 8,107 | 1,177 | 0.485 | 0.264 | +0.005 | yes |
+| 7 years | 6,464 | 902 | 0.478 | 0.268 | -0.002 | yes |
 
 *2 further `emp_length` groups omitted from this table: each is outside the ten largest and none has a recall gap beyond ±0.10. All of them are in `reports/training_summary.json`.*
 
@@ -161,38 +163,38 @@ The same threshold is applied to every group. Per-group thresholds would improve
 
 | Group | n | Positives | Recall | Precision | Gap vs overall | Analysed |
 |:--|--:|--:|--:|--:|--:|:--:|
-| MORTGAGE | 75,499 | 9,041 | 0.350 | 0.255 | -0.128 | yes |
-| RENT | 68,116 | 11,873 | 0.572 | 0.282 | +0.094 | yes |
-| OWN | 18,620 | 2,949 | 0.493 | 0.267 | +0.015 | yes |
+| MORTGAGE | 75,499 | 9,041 | 0.353 | 0.256 | -0.127 | yes |
+| RENT | 68,116 | 11,873 | 0.573 | 0.281 | +0.093 | yes |
+| OWN | 18,620 | 2,949 | 0.494 | 0.267 | +0.014 | yes |
 | ANY | 1 | 0 | 0.000 | 0.000 | +0.000 | **no — n too small** |
 
 ### `income_band`
 
 | Group | n | Positives | Recall | Precision | Gap vs overall | Analysed |
 |:--|--:|--:|--:|--:|--:|:--:|
-| Q1_lowest | 44,741 | 8,397 | 0.688 | 0.268 | +0.210 | yes |
-| Q3 | 40,938 | 5,527 | 0.358 | 0.279 | -0.121 | yes |
-| Q4_highest | 39,456 | 4,308 | 0.205 | 0.278 | -0.273 | yes |
-| Q2 | 37,101 | 5,631 | 0.493 | 0.274 | +0.015 | yes |
+| Q1_lowest | 44,741 | 8,397 | 0.690 | 0.268 | +0.210 | yes |
+| Q3 | 40,938 | 5,527 | 0.358 | 0.278 | -0.121 | yes |
+| Q4_highest | 39,456 | 4,308 | 0.206 | 0.279 | -0.273 | yes |
+| Q2 | 37,101 | 5,631 | 0.495 | 0.274 | +0.015 | yes |
 
 ### The disparities, stated without softening
 
-**`addr_state`.** Recall runs from **0.186** (NH, n=775) to **0.725** (MS, n=1,005) — a spread of 54.0 percentage points across subgroups large enough to analyse. Geography is also a top-ten coefficient, so this spread falls on something the model structurally relies on — which is precisely the terrain fair-lending analysis governs.
-**`emp_length`.** Recall runs from **0.397** (10+ years, n=51,831) to **0.706** (None, n=11,439) — a spread of 30.9 percentage points across subgroups large enough to analyse. Employment length is a socioeconomic proxy, and is treated as one.
-**`home_ownership`.** Recall runs from **0.350** (MORTGAGE, n=75,499) to **0.572** (RENT, n=68,116) — a spread of 22.2 percentage points across subgroups large enough to analyse. Housing tenure correlates with wealth, not only with risk.
-**`income_band`.** Recall runs from **0.205** (Q4_highest, n=39,456) to **0.688** (Q1_lowest, n=44,741) — a spread of 48.3 percentage points across subgroups large enough to analyse. The band is derived from stated income, which is self-reported.
+**`addr_state`.** Recall runs from **0.186** (NH, n=775) to **0.731** (NE, n=754) — a spread of 54.5 percentage points across subgroups large enough to analyse. Geography is also a top-ten coefficient, so this spread falls on something the model structurally relies on — which is precisely the terrain fair-lending analysis governs.
+**`emp_length`.** Recall runs from **0.398** (10+ years, n=51,831) to **0.706** (None, n=11,439) — a spread of 30.8 percentage points across subgroups large enough to analyse. Employment length is a socioeconomic proxy, and is treated as one.
+**`home_ownership`.** Recall runs from **0.353** (MORTGAGE, n=75,499) to **0.573** (RENT, n=68,116) — a spread of 22.0 percentage points across subgroups large enough to analyse. Housing tenure correlates with wealth, not only with risk.
+**`income_band`.** Recall runs from **0.206** (Q4_highest, n=39,456) to **0.690** (Q1_lowest, n=44,741) — a spread of 48.3 percentage points across subgroups large enough to analyse. The band is derived from stated income, which is self-reported.
 **The mechanism is visible in the coefficients, and it is uncomfortable.** Two facts about what drives this model:
 
-1. **`grade` and `sub_grade` dominate.** `grade_A` carries the largest single weight (-0.78), with `sub_grade_A1` next (-0.57). Those columns are *Lending Club's own risk assessment*, so this model substantially inherits their underwriting judgment — including any bias in it. A model that reproduces an existing lender's decisions will reproduce that lender's disparities, and will look accurate while doing so.
+1. **`grade` and `sub_grade` dominate.** `grade_A` carries the largest single weight (-0.76), with `sub_grade_A1` next (-0.56). Those columns are *Lending Club's own risk assessment*, so this model substantially inherits their underwriting judgment — including any bias in it. A model that reproduces an existing lender's decisions will reproduce that lender's disparities, and will look accurate while doing so.
 2. **Geography is a top-ten signal.** Four of the ten largest coefficients are `addr_state` dummies. The worst subgroup gap falling on a state is therefore not incidental — state is structurally one of the strongest things the model uses.
 
 Geographic risk pricing is exactly the terrain fair-lending law governs, because location correlates with protected characteristics that the data deliberately omits. This model has had **no** disparate-impact review, and its state coefficients have not been examined for proxy discrimination. That work would be mandatory before any real use, and none of it has been done here.
-**Worst analysable gap: -0.293 (addr_state=NH).** The Phase 7 promotion gate blocks any challenger that widens this by more than 20% relative — the gate is anchored to the incumbent because no absolute fairness constant would be defensible on this data, and inventing one implies a guarantee the evaluation cannot support.
+**Worst analysable gap: -0.294 (addr_state=NH).** The Phase 7 promotion gate blocks any challenger that widens this by more than 20% relative — the gate is anchored to the incumbent because no absolute fairness constant would be defensible on this data, and inventing one implies a guarantee the evaluation cannot support.
 
 ## Limitations
 
 - **Repeat borrowers cannot be excluded.** `member_id` is null for every row, so the same person may appear in both train and test. Deduplicating by borrower is the standard defence and it is simply unavailable here; held-out metrics are inflated to whatever extent repeat borrowing occurs.
-- **The model inherits the lender's judgment.** `grade` and `sub_grade` are Lending Club's own risk output and carry the largest coefficients. Beating their pricing by 0.019 PR-AUC is a real but narrow margin, and part of the model's apparent skill is theirs.
+- **The model inherits the lender's judgment.** `grade` and `sub_grade` are Lending Club's own risk output and carry the largest coefficients. Beating their pricing by 0.020 PR-AUC is a real but narrow margin, and part of the model's apparent skill is theirs.
 - **Positive rate varies modestly across the split** (14.75% train → 14.71% test), which is a genuine cohort shift rather than an artefact — the maturity rule removed the censoring that would otherwise dominate it.
 - **Modest discrimination by design.** ROC-AUC near 0.70 is close to the published ceiling for this task. This project treats a well-operated modest model as the goal.
 - **One platform, 2007–2015, US unsecured personal loans only.**
@@ -206,8 +208,8 @@ Geographic risk pricing is exactly the terrain fair-lending law governs, because
 | Candidate | PR-AUC | 95% CI | ECE | Chosen |
 |:--|--:|:--|--:|:--:|
 | baseline_prevalence | 0.1471 | [0.1455, 0.1489] | 0.0004 |  |
-| logistic_l2 | 0.2723 | [0.2676, 0.2769] | 0.0039 | **yes** |
-| logistic_l2_strong | 0.2729 | [0.2683, 0.2776] | 0.0040 |  |
+| logistic_l2 | 0.2725 | [0.2678, 0.2771] | 0.0036 | **yes** |
+| logistic_l2_strong | 0.2725 | [0.2679, 0.2772] | 0.0038 |  |
 | random_forest_shallow | 0.2670 | [0.2623, 0.2719] | 0.0049 |  |
 
 logistic_l2_strong has the higher point estimate but its confidence interval overlaps logistic_l2's, so the difference is not evidence of improvement. The simpler model is preferred: it is cheaper to serve, easier to explain, and easier to debug at 2am.

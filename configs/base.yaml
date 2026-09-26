@@ -159,7 +159,7 @@ model:
   challenger_alias: challenger
   local_fallback: null
   # PLACEHOLDER, and a dangerous one. Training selects the real threshold on
-  # the validation split (0.207 for the current champion) and writes it into
+  # the validation split (0.2049 for the current champion) and writes it into
   # metadata.json beside the artifact, which the loader reads FIRST. This
   # value is served only if that contract is missing — and serving 0.5
   # against a model tuned elsewhere has already happened five times in this

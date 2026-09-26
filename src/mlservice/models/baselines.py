@@ -132,8 +132,9 @@ def single_feature_heuristic(
     A trained model that cannot beat *this* has not earned its deployment,
     monitoring and retraining infrastructure. This baseline is unusually stiff,
     because a whole lender's underwriting effort is already baked into it: the
-    champion clears it by 0.0194 PR-AUC (0.2723 against 0.2529), and losing
-    `grade` alone would give the entire margin back.
+    champion clears it by 0.0196 PR-AUC (0.2725 against 0.2529), and losing
+    `grade` alone gives back 0.0185 of that — enough to land inside this
+    baseline's own confidence interval.
     """
     score = df[feature].to_numpy(dtype=float)
     # Flag at the prevalence rate so the comparison is like-for-like.

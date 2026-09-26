@@ -132,7 +132,7 @@ jobs:
           cache-dependency-glob: uv.lock
       - run: uv sync --locked --all-groups
 
-      # ~3 MB from UCI. Cached by checksum so a re-run does not re-download, and
+      # 1.6 GB from the Lending Club mirror. Cached by checksum so a re-run does not re-download, and
       # the download step itself verifies the archive against the committed
       # SHA256 — a changed upstream dataset fails here rather than silently
       # changing every downstream number.

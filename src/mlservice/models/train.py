@@ -33,6 +33,34 @@ from mlservice.models import calibration, evaluate, registry, subgroups
 
 log = get_logger(__name__)
 
+
+#: Solver for both logistic candidates. Not lbfgs, and the reason is measured.
+#:
+#: The same commit trained on the same data gave two different champions: on
+#: Windows threshold 0.20701, in CI on Linux 0.20561, disagreeing on 396 of
+#: 162,236 flag decisions. Shuffling the training rows alone reproduced the
+#: gap, so it was the solver, not the data or the platform. The one-hot design
+#: has near-flat directions (sub_grade's dummies sum exactly to grade's), and
+#: lbfgs at tol=1e-4 stops wherever its path happens to reach them —
+#: coefficients 9.2e-3 apart for two row orders. Tightening tol made it worse,
+#: not better: at 1e-6 and 1e-8 lbfgs exhausted its evaluation budget and the
+#: coefficients drifted further apart.
+#:
+#: With the L2 penalty the optimum is unique; lbfgs simply was not reaching it.
+#: newton-cholesky solves the curvature exactly and does, measured on the real
+#: training matrix (389,353 x 231):
+#:
+#:                      lbfgs        newton-cholesky
+#:     iterations        805          3
+#:     fit time          126 s        6 s
+#:     coef diff (rows)  9.2e-3       3.0e-9
+#:     objective         245,776.62   245,773.76   <- lbfgs was not at the optimum
+#:     test PR-AUC       0.2766       0.2767       (uncalibrated)
+#:
+#: Cheap at this width: it forms a 231 x 231 Hessian, which would not be true
+#: of a much wider design.
+LOGISTIC_SOLVER = "newton-cholesky"
+
 #: Types skops must be told to trust when MLflow saves the champion.
 #:
 #: *   ``_CalibratedClassifier`` — sklearn's internal calibrator class.
@@ -88,11 +116,10 @@ def candidates(seed: int) -> list[Candidate]:
                 l1_ratio=0,
                 C=1.0,
                 max_iter=2000,
-                # Weighting matters far more than the solver here: at a 14.8%
-                # positive rate, an unweighted fit optimises largely for the
-                # negative class and produces a compressed score range.
+                # At a 14.8% positive rate an unweighted fit optimises largely
+                # for the negative class and produces a compressed score range.
                 class_weight="balanced",
-                solver="lbfgs",
+                solver=LOGISTIC_SOLVER,
                 random_state=seed,
             ),
             rationale="The intended champion. Linear, inspectable, cheap to serve.",
@@ -105,7 +132,7 @@ def candidates(seed: int) -> list[Candidate]:
                 C=0.05,  # heavier regularisation
                 max_iter=2000,
                 class_weight="balanced",
-                solver="lbfgs",
+                solver=LOGISTIC_SOLVER,
                 random_state=seed,
             ),
             rationale=(

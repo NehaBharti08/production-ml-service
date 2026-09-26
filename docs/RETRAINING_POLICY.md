@@ -152,8 +152,9 @@ prevents them getting worse.
 Catches a corrupted feature pipeline that every aggregate metric sails past. A model can
 post an excellent PR-AUC while `grade` is silently mapped to the wrong column. The
 directional test that asserts *a worse grade must not lower predicted risk* catches it;
-the metric does not. Measured: flattening `grade` costs 0.0195 PR-AUC — invisible on a
-dashboard, and the entire margin over the lender's own pricing. See the ablation table
+the metric does not. Measured: flattening `grade` costs 0.0185 PR-AUC — invisible on a
+dashboard, and enough to leave the model inside the lender baseline's own confidence
+interval. See the ablation table
 in [RUNBOOK.md](RUNBOOK.md) §5.
 
 The pass rate is 1.0 rather than 0.95 because these encode lending priors. "95% of our

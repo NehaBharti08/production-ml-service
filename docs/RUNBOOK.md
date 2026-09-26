@@ -364,17 +364,18 @@ upstream failure laundered into a model decision.
 
    | Feature lost in the pipeline | PR-AUC | Change |
    |:--|--:|--:|
-   | *(intact)* | 0.2723 | — |
-   | `grade` | 0.2527 | **-0.0195** |
-   | `sub_grade` | 0.2703 | -0.0020 |
-   | `fico_range_low` | 0.2707 | -0.0016 |
-   | `int_rate` | 0.2739 | **+0.0016** |
+   | *(intact)* | 0.2725 | — |
+   | `grade` | 0.2540 | **-0.0185** |
+   | `sub_grade` | 0.2707 | -0.0017 |
+   | `fico_range_low` | 0.2711 | -0.0014 |
+   | `int_rate` | 0.2738 | **+0.0013** |
 
-   Read those as an on-call engineer. Silently losing `grade` costs 0.0195 —
-   which looks like nothing on a dashboard, and is the *entire* margin over the
-   lender's own `int_rate` baseline of 0.2529. The model would still be scoring,
-   still be calibrated, still be inside every alert band, and no longer beating
-   the incumbent at all.
+   Read those as an on-call engineer. Silently losing `grade` costs 0.0185 —
+   which looks like nothing on a dashboard, and is 94% of the 0.0196 margin
+   over the lender's own `int_rate` baseline. What remains, 0.2540, sits inside
+   that baseline's own confidence interval [0.2486, 0.2575]. The model would
+   still be scoring, still be calibrated, still be inside every alert band, and
+   no longer demonstrably better than the incumbent.
 
    The other three move less than 0.002, and losing `int_rate` *improves* the
    aggregate. No threshold on PR-AUC can catch any of this. Only a directional

@@ -408,8 +408,8 @@ specifically**:
 | 3 | **induced** | **0.3137** | 0.10 | **yes** |
 | 4 | **induced** | **0.3032** | 0.10 | **yes** |
 
-Prediction drift responds too. The alert rate moves from a 0.3334 reference to
-**0.4388, 0.4620 and 0.4572** across the three induced windows — +32%, +39% and
+Prediction drift responds too. The alert rate moves from a 0.3346 reference to
+**0.4386, 0.4618 and 0.4586** across the three induced windows — +31%, +38% and
 +37% — because over-sampling the sub-prime D-G shoulder raises the share above
 the decision threshold.
 

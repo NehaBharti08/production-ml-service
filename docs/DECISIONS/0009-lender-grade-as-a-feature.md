@@ -45,9 +45,9 @@ being visible in the coefficients.
 
 **It is also what the baseline measures.** The strongest trivial baseline ranks
 loans by `int_rate` alone — the lender's own priced risk — and reaches PR-AUC
-0.2529. The champion reaches 0.2723 with non-overlapping intervals. So the
+0.2529. The champion reaches 0.2725 with non-overlapping intervals. So the
 honest claim is: *this model adds something to the lender's own assessment*,
-and a margin of 0.019 PR-AUC is real but narrow. That claim only makes sense
+and a margin of 0.020 PR-AUC is real but narrow. That claim only makes sense
 if the grade is in the model.
 
 **Their policy changes arrive as drift, which is useful.** The empirical-null
@@ -82,7 +82,7 @@ signal rather than as unexplained performance decay months later.
   disparities, and looks accurate while doing so. Accuracy measured against
   that lender's own historical outcomes cannot reveal this.
 - **Part of the model's apparent skill is theirs.** Beating a baseline built
-  from their own pricing by 0.019 is the honest measure of what this model adds.
+  from their own pricing by 0.020 is the honest measure of what this model adds.
 - **It is not transferable.** A different lender's grades mean something
   different, or do not exist. This model cannot be applied to another lender's
   applicants without retraining on that lender's own assessments.
