@@ -1,0 +1,95 @@
+{
+  "promote": true,
+  "reason": "all 6 gates passed",
+  "n_gates": 6,
+  "n_failed": 0,
+  "failed_gates": [],
+  "gates": [
+    {
+      "name": "performance",
+      "passed": true,
+      "reason": "PR-AUC 0.2725 >= 0.2675 (incumbent 0.2725 - 0.005 margin)",
+      "detail": {
+        "metric": "pr_auc",
+        "challenger": 0.272461,
+        "incumbent": 0.272461,
+        "margin": 0.005,
+        "floor": 0.267461,
+        "difference": 0.0
+      },
+      "blocking": true
+    },
+    {
+      "name": "calibration",
+      "passed": true,
+      "reason": "Brier ratio 1.0000 <= 1.02 and ECE 0.0036 <= 0.05",
+      "detail": {
+        "challenger_brier": 0.117209,
+        "incumbent_brier": 0.117209,
+        "brier_ratio": 1.0,
+        "max_brier_ratio": 1.02,
+        "challenger_ece": 0.003572,
+        "max_ece": 0.05,
+        "brier_ok": true,
+        "ece_ok": true
+      },
+      "blocking": true
+    },
+    {
+      "name": "subgroup",
+      "passed": true,
+      "reason": "worst gap -0.2940 vs incumbent -0.2940 (+0.0% relative, limit +20%)",
+      "detail": {
+        "challenger_worst_gap": -0.293982,
+        "incumbent_worst_gap": -0.293982,
+        "challenger_worst_group": "addr_state=NH",
+        "incumbent_worst_group": "addr_state=NH",
+        "relative_widening": 0.0,
+        "max_relative_widening": 0.2,
+        "min_subgroup_n": 500
+      },
+      "blocking": true
+    },
+    {
+      "name": "behavioral",
+      "passed": true,
+      "reason": "25/25 behavioural tests passed",
+      "detail": {
+        "total": 25,
+        "passed": 25,
+        "pass_rate": 1.0,
+        "required_pass_rate": 1.0,
+        "failures": [],
+        "suites": [
+          "invariance",
+          "directional",
+          "robustness"
+        ]
+      },
+      "blocking": true
+    },
+    {
+      "name": "operational",
+      "passed": true,
+      "reason": "artifact loads and matches the serving contract",
+      "detail": {
+        "artifact_loads": true,
+        "challenger_schema_hash": "f5566c96d5eed4de",
+        "incumbent_schema_hash": "f5566c96d5eed4de",
+        "schema_hash_matches": true
+      },
+      "blocking": true
+    },
+    {
+      "name": "data_quality",
+      "passed": true,
+      "reason": "training data passed its quality checks",
+      "detail": {
+        "suite_passed": true,
+        "max_missingness_increase_pct_points": 10.0,
+        "features_regressed": {}
+      },
+      "blocking": true
+    }
+  ]
+}
